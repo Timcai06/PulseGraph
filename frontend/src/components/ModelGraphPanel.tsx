@@ -3,6 +3,7 @@ import { Handle, Position, ReactFlow, Background, Controls, MiniMap, type Edge, 
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type { GraphNode, ModelGraph } from "../api/client";
+import { NeuralNetworkView } from "./NeuralNetworkView";
 
 gsap.registerPlugin(useGSAP);
 
@@ -29,12 +30,14 @@ type Props = {
   graph: ModelGraph;
   selectedNodeId?: string;
   pulsedNodeId?: string;
+  probabilities?: number[];
   onSelect: (node: GraphNode) => void;
 };
 
-export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, onSelect }: Props) {
+export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [viewMode, setViewMode] = useState<"ops" | "neurons">("ops");
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -64,7 +67,7 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, onSelect 
   }, [graph.edges, pulsedNodeId, reducedMotion]);
 
   useGSAP(() => {
-    if (!pulsedNodeId || reducedMotion) return;
+    if (!pulsedNodeId || reducedMotion || viewMode !== "ops") return;
     const target = containerRef.current?.querySelector(`[data-layer-id="${pulsedNodeId}"]`);
     if (!target) return;
     gsap.fromTo(
@@ -79,26 +82,41 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, onSelect 
         ease: "power2.out"
       }
     );
-  }, { dependencies: [pulsedNodeId, reducedMotion], scope: containerRef });
+  }, { dependencies: [pulsedNodeId, reducedMotion, viewMode], scope: containerRef });
+
+  const handleSelectLayer = (nodeId: string) => {
+    const node = graph.nodes.find((item) => item.id === nodeId);
+    if (node) onSelect(node);
+  };
 
   return (
     <section className="graph-panel" ref={containerRef}>
       <div className="panel-heading">
-        <h2>Model Graph</h2>
-        <span>Netron-like structure with training pulses</span>
+        <div>
+          <h2>{viewMode === "ops" ? "Model Graph" : "Neural Network"}</h2>
+          <span>{viewMode === "ops" ? "Netron-like structure with training pulses" : "Layered neurons with activation intensity"}</span>
+        </div>
+        <div className="view-tabs" aria-label="graph view">
+          <button className={viewMode === "ops" ? "active" : ""} onClick={() => setViewMode("ops")} type="button">Ops</button>
+          <button className={viewMode === "neurons" ? "active" : ""} onClick={() => setViewMode("neurons")} type="button">Neurons</button>
+        </div>
       </div>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        minZoom={0.35}
-        onNodeClick={(_, node) => onSelect(node.data)}
-      >
-        <Background color="#263244" />
-        <MiniMap pannable zoomable />
-        <Controls />
-      </ReactFlow>
+      {viewMode === "ops" ? (
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          minZoom={0.35}
+          onNodeClick={(_, node) => onSelect(node.data)}
+        >
+          <Background color="#263244" />
+          <MiniMap pannable zoomable />
+          <Controls />
+        </ReactFlow>
+      ) : (
+        <NeuralNetworkView graph={graph} probabilities={probabilities} pulsedNodeId={pulsedNodeId} onSelectLayer={handleSelectLayer} />
+      )}
     </section>
   );
 }

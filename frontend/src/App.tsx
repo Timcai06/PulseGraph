@@ -145,7 +145,13 @@ export default function App() {
       <TopStatusBar backendStatus={backendStatus} runStatus={runStatus} step={latestStep} device={device} />
       <div className="workspace">
         <ControlRail onInspect={handleInspect} onDemoForward={handleDemoForward} onStartStream={handleStartStream} onReset={handleReset} />
-        <ModelGraphPanel graph={graph} selectedNodeId={selectedNode?.id} pulsedNodeId={pulsedNodeId} onSelect={setSelectedNode} />
+        <ModelGraphPanel
+          graph={graph}
+          selectedNodeId={selectedNode?.id}
+          pulsedNodeId={pulsedNodeId}
+          probabilities={prediction?.probabilities}
+          onSelect={setSelectedNode}
+        />
         <LayerInspector node={selectedNode} tensors={tensors} layer={selectedLayer} inspection={inspection} />
       </div>
 
