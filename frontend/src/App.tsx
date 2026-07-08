@@ -53,6 +53,8 @@ type SourceRecipe = {
   entryClass: string;
 };
 
+type CurrentRunKind = "source-import" | "source-training" | "recorded-training";
+
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
   const [graph, setGraph] = useState<ModelGraph>(emptyGraph);
@@ -69,6 +71,7 @@ export default function App() {
   const [page, setPage] = useState<"monitor" | "history">("monitor");
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
+  const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
   const shellRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
   const stream = useRunStream();
@@ -153,6 +156,7 @@ export default function App() {
       setImportCandidate(undefined);
       if (result.matched_run_id) {
         setForwardTarget({ runId: result.matched_run_id });
+        setCurrentRunKind("recorded-training");
         setDetailInitialTab("overview");
         setDetailRunId(result.matched_run_id);
       } else if (result.weights_fingerprint) {
@@ -199,6 +203,7 @@ export default function App() {
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
       setForwardTarget({ runId: result.run_id, checkpointStep: result.checkpoint.step });
+      setCurrentRunKind("source-import");
       setPage("monitor");
       stream.startStream(result.run_id);
       applyPredictionResult(await runForward(result.run_id, result.checkpoint.step));
@@ -224,6 +229,7 @@ export default function App() {
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
       setForwardTarget({ runId: result.run_id, checkpointStep: result.checkpoint.step });
+      setCurrentRunKind("source-training");
       setPage("monitor");
       stream.startStream(result.run_id);
       applyPredictionResult(await runForward(result.run_id, result.checkpoint.step));
@@ -251,6 +257,7 @@ export default function App() {
   const handleWatchRun = (runId: string) => {
     setErrorMessage(undefined);
     setForwardTarget({ runId });
+    setCurrentRunKind("recorded-training");
     setPage("monitor");
     stream.startStream(runId);
   };
@@ -277,6 +284,7 @@ export default function App() {
     setImportCandidate(undefined);
     setForwardTarget(undefined);
     setSourceRecipe(undefined);
+    setCurrentRunKind(undefined);
     loadDemoGraph();
   };
 
@@ -327,6 +335,10 @@ export default function App() {
             importAvailable={Boolean(importCandidate)}
             trainAvailable={Boolean(sourceRecipe)}
             forwardTargetLabel={describeForwardTarget(forwardTarget)}
+            currentRunKind={currentRunKind}
+            metricCount={stream.metrics.length}
+            eventCount={stream.events.length}
+            hasPrediction={Boolean(prediction)}
             liveRuns={runBuckets.active}
             watchedRunId={stream.runId}
             busy={busy}
@@ -359,7 +371,7 @@ export default function App() {
             <h2>Training Telemetry</h2>
             <span>{stream.runId ? `run ${stream.runId}` : "loss, accuracy, step time"}</span>
           </div>
-          <MetricChart points={stream.metrics} status={stream.status} theme={theme} />
+          <MetricChart points={stream.metrics} status={stream.status} theme={theme} runKind={currentRunKind} />
         </div>
         <div className="prediction-panel">
           <div className="panel-heading">

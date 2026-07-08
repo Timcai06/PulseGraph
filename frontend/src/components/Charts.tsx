@@ -29,9 +29,20 @@ type MetricsProps = {
   points: MetricPoint[];
   status?: StreamStatus;
   theme?: Theme;
+  runKind?: string;
 };
 
-export function MetricChart({ points, status = "idle", theme = "dark" }: MetricsProps) {
+function emptyMetricMessage(status: StreamStatus, runKind?: string) {
+  if (runKind === "source-import") {
+    return "This run is an inference replay. Use Train source to create loss, accuracy, and infra telemetry.";
+  }
+  if (status === "streaming") {
+    return "Waiting for training metrics from the current run.";
+  }
+  return "Train source or watch a recorded training run to populate telemetry.";
+}
+
+export function MetricChart({ points, status = "idle", theme = "dark", runKind }: MetricsProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useChart(ref);
   const reducedMotion = useReducedMotion();
@@ -108,9 +119,7 @@ export function MetricChart({ points, status = "idle", theme = "dark" }: Metrics
       <div className="chart" ref={ref} />
       {points.length === 0 && (
         <div className="chart-empty">
-          {status === "streaming"
-            ? "Waiting for real training metric events. Source imports are inference-only until a training recipe runs."
-            : "Training Telemetry plots real training events only. Use Run forward for source inference, or watch a recorded training run."}
+          {emptyMetricMessage(status, runKind)}
         </div>
       )}
     </div>

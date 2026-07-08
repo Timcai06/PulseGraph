@@ -14,6 +14,10 @@ type Props = {
   importAvailable: boolean;
   trainAvailable: boolean;
   forwardTargetLabel: string;
+  currentRunKind?: string;
+  metricCount: number;
+  eventCount: number;
+  hasPrediction: boolean;
   liveRuns: RunSummary[];
   watchedRunId?: string;
   busy?: "inspect" | "source" | "train" | "forward";
@@ -41,12 +45,24 @@ export function ControlRail({
   importAvailable,
   trainAvailable,
   forwardTargetLabel,
+  currentRunKind,
+  metricCount,
+  eventCount,
+  hasPrediction,
   liveRuns,
   watchedRunId,
   busy,
   streaming,
   errorMessage
 }: Props) {
+  const streamLabel =
+    currentRunKind === "source-import"
+      ? "Replay events"
+      : currentRunKind === "source-training" || currentRunKind === "recorded-training"
+        ? "Stream training"
+        : "Demo stream";
+  const streamAction = streaming ? `Restart ${streamLabel.toLowerCase()}` : streamLabel;
+
   return (
     <aside className="control-rail">
       <section>
@@ -71,6 +87,31 @@ export function ControlRail({
         </button>
         <p className="hint">Upload source, then run forward or train a short local recipe.</p>
         {errorMessage && <p className="error-hint">{errorMessage}</p>}
+      </section>
+
+      <section className="session-card">
+        <div>
+          <span>Current run</span>
+          <strong>{currentRunKind ?? "demo"}</strong>
+        </div>
+        <dl>
+          <div>
+            <dt>target</dt>
+            <dd>{forwardTargetLabel}</dd>
+          </div>
+          <div>
+            <dt>events</dt>
+            <dd>{eventCount}</dd>
+          </div>
+          <div>
+            <dt>metrics</dt>
+            <dd>{metricCount}</dd>
+          </div>
+          <div>
+            <dt>forward</dt>
+            <dd>{hasPrediction ? "ready" : "waiting"}</dd>
+          </div>
+        </dl>
       </section>
 
       <section>
@@ -105,9 +146,8 @@ export function ControlRail({
         <button onClick={onRunForward} disabled={busy === "forward"}>
           {busy === "forward" ? <Loader2 size={16} className="spin" /> : <Zap size={16} />} Run forward
         </button>
-        <p className="hint">{forwardTargetLabel}</p>
         <button onClick={onStartStream}>
-          <Play size={16} /> {streaming && !watchedRunId ? "Restart stream" : "Start stream"}
+          <Play size={16} /> {streamAction}
         </button>
         <button className="secondary" onClick={onReset}>
           <RotateCcw size={16} /> Reset
