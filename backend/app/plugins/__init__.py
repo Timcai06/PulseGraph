@@ -1,0 +1,2 @@
+"""Algorithm visualization plugin profiles."""
+

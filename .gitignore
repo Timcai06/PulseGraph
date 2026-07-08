@@ -12,9 +12,10 @@ build/
 !.env.example
 runs/
 outputs/
+output/
 artifacts/
 checkpoints/
+.playwright-cli/
 *.pt
 *.pth
 *.onnx
-
