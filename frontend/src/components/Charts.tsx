@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
+import type { MetricPoint, StreamStatus } from "../hooks/useRunStream";
 
-export type MetricPoint = {
-  step: number;
-  loss?: number;
-  accuracy?: number;
-  stepTimeMs?: number;
-  memoryPeakMb?: number;
-};
+export type { MetricPoint };
 
 type MetricsProps = {
   points: MetricPoint[];
+  status?: StreamStatus;
 };
 
 function useReducedMotion() {
@@ -27,7 +23,7 @@ function useReducedMotion() {
   return reducedMotion;
 }
 
-export function MetricChart({ points }: MetricsProps) {
+export function MetricChart({ points, status = "idle" }: MetricsProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const reducedMotion = useReducedMotion();
@@ -67,7 +63,16 @@ export function MetricChart({ points }: MetricsProps) {
     });
   }, [points, reducedMotion]);
 
-  return <div className="chart" ref={ref} />;
+  return (
+    <div className="chart-wrap">
+      <div className="chart" ref={ref} />
+      {points.length === 0 && (
+        <div className="chart-empty">
+          {status === "streaming" ? "Waiting for the first metric event…" : "Start a stream or watch a live run to plot telemetry."}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ProbabilityChart({ probabilities }: { probabilities: number[] }) {

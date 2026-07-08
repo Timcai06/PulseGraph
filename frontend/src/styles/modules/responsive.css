@@ -1,0 +1,100 @@
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-rows: auto minmax(620px, 1fr) auto;
+  }
+
+  .top-bar {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .status-strip {
+    flex-wrap: wrap;
+  }
+
+  .workspace {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .inspector {
+    grid-column: 1 / -1;
+    min-height: 260px;
+  }
+
+  .bottom-dock {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .event-panel {
+    grid-column: 1 / -1;
+    min-height: 260px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 10px;
+    grid-template-rows: auto auto auto;
+  }
+
+  .workspace,
+  .bottom-dock {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-panel {
+    min-height: 560px;
+  }
+
+  .panel-heading {
+    align-items: flex-start;
+    gap: 4px;
+    flex-direction: column;
+  }
+
+  .view-tabs {
+    width: 100%;
+  }
+
+  .neural-layers {
+    grid-template-columns: 1fr;
+    min-height: 940px;
+    gap: 18px;
+    padding: 20px;
+  }
+
+  .neural-layer {
+    min-height: 280px;
+  }
+
+  .neural-links {
+    display: none;
+  }
+
+  .chart,
+  .prob-chart {
+    height: 240px;
+  }
+
+  .inference-body {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .inference-body .prob-chart {
+    width: 100%;
+    height: 220px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

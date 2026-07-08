@@ -23,8 +23,9 @@ Core boundary:
 Initial architecture:
 
 ```text
-frontend/    React, React Flow, ECharts, GSAP, shadcn/ui
+frontend/    React, React Flow, ECharts, GSAP (hand-rolled CSS design tokens)
 backend/     FastAPI, PyTorch, event stream, model inspector, runtime hooks
+client/      zero-dependency telemetry emitter for training scripts
 docs/        design specs and architecture notes
 ```
 
@@ -36,9 +37,30 @@ The current implementation includes:
 - Safe `.pt` upload inspection with `torch.load(..., weights_only=True)`.
 - SHA-256 artifact identity for uploaded model files.
 - Inferred graph generation from state dict tensor names and shapes.
-- Trusted demo MLP runtime with forward-step snapshots.
+- Trusted demo MLP runtime backed by real data: it loads the trained checkpoint from
+  `exercises/02_mnist_digit_recognition/outputs/mnist_mlp.pt` and real MNIST test digits
+  (`data/mnist/MNIST/raw`), falling back to random weights and synthetic digits when absent.
+  Override paths with `PULSEGRAPH_MODEL_PATH` and `PULSEGRAPH_MNIST_DIR`.
+- Live run ingestion: training scripts POST batched events to `/api/runs/{run_id}/events`,
+  the dashboard lists runs from `/api/runs` and follows them over SSE at `/api/runs/{run_id}/stream`.
+- `client/pulsegraph_client.py`: a stdlib-only emitter (`PulseGraphRun`) that batches events on a
+  background thread; `exercises/02_mnist_digit_recognition/02_train_mlp.py` uses it to stream real
+  training metrics, layer snapshots, infra telemetry, and checkpoint events.
 - SSE demo training stream with metric, layer, infra, checkpoint, animation, and completion events.
-- React dashboard with React Flow model graph, ECharts metrics/probabilities, and GSAP node pulse animation.
+- React dashboard with React Flow model graph, ECharts metrics/probabilities, GSAP node pulse
+  animation, live-run picker, and empty/loading/error states.
+
+## Stream a Real Training Run
+
+With the backend running, start the MNIST exercise in another terminal:
+
+```bash
+cd /Users/tim/Documents/ai_infra
+/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python exercises/02_mnist_digit_recognition/02_train_mlp.py
+```
+
+The run appears under "Live Runs" in the dashboard; click it to follow metrics live.
+Set `PULSEGRAPH_URL=""` to disable telemetry, or point it at a non-default backend URL.
 
 ## Run Locally
 

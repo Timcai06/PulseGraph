@@ -74,10 +74,21 @@ class PredictionResponse(BaseModel):
     sample_index: int
     label: int
     prediction: int
+    weights: Literal["trained", "random"] = "random"
+    sample_source: Literal["mnist", "synthetic"] = "synthetic"
     image_pixels: list[float]
     probabilities: list[float]
     graph: ModelGraph
     layers: list[LayerSnapshot]
+
+
+class RunSummary(BaseModel):
+    run_id: str
+    created_at: float
+    last_event_at: float
+    completed: bool
+    event_count: int
+    last_step: int
 
 
 class RunEvent(BaseModel):

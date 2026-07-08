@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 import torch
 from torch import nn
 
+from app.runtime.mnist_data import load_test_samples, test_sample_indices_by_digit, trained_model_path
 from app.schemas import GraphEdge, GraphNode, LayerSnapshot, ModelGraph, PredictionResponse
 
 
@@ -37,11 +39,22 @@ class DemoMLP(nn.Module):
         }
 
 
-def create_demo_model() -> DemoMLP:
+@lru_cache(maxsize=1)
+def get_demo_model() -> tuple[DemoMLP, str]:
+    """Build the demo MLP once, preferring the trained exercise checkpoint."""
     torch.manual_seed(7)
     model = DemoMLP()
+    weights = "random"
+    checkpoint = trained_model_path()
+    if checkpoint.exists():
+        try:
+            state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+            model.load_state_dict(state_dict)
+            weights = "trained"
+        except (RuntimeError, ValueError, OSError):
+            weights = "random"
     model.eval()
-    return model
+    return model, weights
 
 
 def demo_graph() -> ModelGraph:
@@ -79,8 +92,7 @@ def demo_graph() -> ModelGraph:
     return ModelGraph(nodes=nodes, edges=edges)
 
 
-def sample_digit(index: int) -> tuple[torch.Tensor, int]:
-    label = index % 10
+def _synthetic_digit(label: int) -> torch.Tensor:
     image = torch.zeros(1, 1, 28, 28)
     center_x = 8 + (label % 5) * 3
     center_y = 8 + (label // 5) * 8
@@ -90,7 +102,20 @@ def sample_digit(index: int) -> tuple[torch.Tensor, int]:
             stroke = max(0.0, 1.0 - distance / (4 + label * 0.12))
             ring = 0.45 if abs(distance - (5 + label * 0.1)) < 0.7 else 0.0
             image[0, 0, y, x] = max(stroke, ring)
-    return image, label
+    return image
+
+
+def sample_digit(index: int) -> tuple[torch.Tensor, int, str]:
+    """Pick a digit whose label is index % 10, preferring real MNIST test samples."""
+    label = index % 10
+    data = load_test_samples()
+    by_digit = test_sample_indices_by_digit()
+    if data is not None and by_digit is not None and by_digit[label]:
+        images, _ = data
+        candidates = by_digit[label]
+        position = candidates[(index // 10) % len(candidates)]
+        return images[position : position + 1], label, "mnist"
+    return _synthetic_digit(label), label, "synthetic"
 
 
 def _snapshot(layer_id: str, tensor: torch.Tensor, input_shape: list[int] | None = None) -> LayerSnapshot:
@@ -106,8 +131,8 @@ def _snapshot(layer_id: str, tensor: torch.Tensor, input_shape: list[int] | None
 
 
 def run_demo_forward(index: int = 0) -> PredictionResponse:
-    model = create_demo_model()
-    image, label = sample_digit(index)
+    model, weights = get_demo_model()
+    image, label, sample_source = sample_digit(index)
     with torch.no_grad():
         steps = model.forward_steps(image)
     probabilities = steps["softmax"].squeeze(0)
@@ -123,6 +148,8 @@ def run_demo_forward(index: int = 0) -> PredictionResponse:
         sample_index=index,
         label=label,
         prediction=prediction,
+        weights=weights,
+        sample_source=sample_source,
         image_pixels=[float(value) for value in image.squeeze(0).squeeze(0).flatten().tolist()],
         probabilities=[float(value) for value in probabilities.tolist()],
         graph=demo_graph(),

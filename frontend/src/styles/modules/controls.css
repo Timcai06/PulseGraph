@@ -1,0 +1,92 @@
+.control-rail,
+.inspector {
+  padding: 14px;
+  overflow: auto;
+}
+
+.control-rail section + section,
+.inspector section {
+  margin-top: 18px;
+}
+
+.control-rail h2,
+.inspector h2,
+.panel-heading h2 {
+  font-size: 15px;
+  letter-spacing: 0;
+  margin-bottom: 10px;
+}
+
+.control-rail button + button {
+  margin-top: 8px;
+}
+
+.file-drop {
+  position: relative;
+  height: 104px;
+  border: 1px dashed rgba(96, 165, 250, 0.5);
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  color: #bfdbfe;
+  background: rgba(30, 64, 175, 0.16);
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.file-drop:hover {
+  border-color: rgba(96, 165, 250, 0.85);
+  background: rgba(30, 64, 175, 0.24);
+}
+
+.file-drop.busy {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.file-drop input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.run-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-weight: 500;
+  font-size: 12px;
+  text-align: left;
+}
+
+.run-item .run-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.run-item .run-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex: none;
+}
+
+.run-item .live {
+  color: var(--green);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+  border-radius: 999px;
+}
+
+.run-item.watching {
+  border-color: var(--cyan-strong);
+  background: rgba(34, 211, 238, 0.14);
+}

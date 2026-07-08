@@ -7,9 +7,11 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from app.events.run_registry import run_registry
 from app.events.training_stream import demo_training_events, to_sse
 from app.inspector.pt_inspector import inspect_pt_file
 from app.runtime.demo_mlp import demo_graph, run_demo_forward
+from app.schemas import RunEvent, RunSummary
 
 
 app = FastAPI(title="PulseGraph API", version="0.1.0")
@@ -45,6 +47,32 @@ async def stream_demo_run():
     async def generate():
         async for event in demo_training_events():
             yield to_sse(event)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/api/runs")
+def list_runs() -> list[RunSummary]:
+    return run_registry.list_runs()
+
+
+@app.post("/api/runs/{run_id}/events")
+def ingest_run_events(run_id: str, events: RunEvent | list[RunEvent]):
+    batch = events if isinstance(events, list) else [events]
+    for event in batch:
+        event.run_id = run_id
+    run = run_registry.publish(run_id, batch)
+    return {"accepted": len(batch), "run_id": run_id, "completed": run.completed}
+
+
+@app.get("/api/runs/{run_id}/stream")
+async def stream_run(run_id: str):
+    async def generate():
+        async for event in run_registry.subscribe(run_id):
+            if event is None:
+                yield ": keepalive\n\n"
+            else:
+                yield to_sse(event)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
