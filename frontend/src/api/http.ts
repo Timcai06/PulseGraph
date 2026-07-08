@@ -43,6 +43,15 @@ export async function listRuns(): Promise<RunSummary[]> {
   return response.json();
 }
 
+export async function deleteRun(runId: string): Promise<{ run_id: string; deleted: boolean }> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  if (!response.ok) {
+    const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
+    throw new Error(typeof detail === "string" ? detail : "Deleting the run failed");
+  }
+  return response.json();
+}
+
 export async function getRunDetail(runId: string): Promise<RunDetail> {
   const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/detail`);
   if (!response.ok) throw new Error("Failed to load run detail");
@@ -130,6 +139,18 @@ export async function trainSourceRun(
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Training the source failed");
+  }
+  return response.json();
+}
+
+export async function trainResourceRun(files: NamedSourceFile[], entryFile: string, steps = 8): Promise<SourceImportResult> {
+  const form = sourceForm(files);
+  form.append("entry_file", entryFile);
+  form.append("steps", String(steps));
+  const response = await fetch("/api/runs/train-resource", { method: "POST", body: form });
+  if (!response.ok) {
+    const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
+    throw new Error(typeof detail === "string" ? detail : "Training the resource failed");
   }
   return response.json();
 }

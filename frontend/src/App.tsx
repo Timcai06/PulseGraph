@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import type { GraphNode, InspectionResponse, ModelGraph, NamedSourceFile, PredictionResponse, RunSummary } from "./api/client";
+import type { GraphNode, ModelGraph, NamedSourceFile, PredictionResponse, RunSummary } from "./api/client";
 import {
-  analyzeSourceCandidates,
-  getDemoForward,
+  deleteRun,
   getDemoModel,
   getHealth,
-  importArtifact,
-  importSourceRun,
-  inspectFile,
   listRuns,
   runForward,
-  trainSourceRun
+  trainResourceRun
 } from "./api/client";
 import { TopStatusBar } from "./components/TopStatusBar";
 import { ControlRail } from "./components/ControlRail";
@@ -50,23 +46,20 @@ function initialTheme(): Theme {
 type SourceRecipe = {
   files: NamedSourceFile[];
   entryFile: string;
-  entryClass: string;
 };
 
-type CurrentRunKind = "source-import" | "source-training" | "recorded-training";
+type CurrentRunKind = "resource-training" | "source-training" | "recorded-training";
 
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
   const [graph, setGraph] = useState<ModelGraph>(emptyGraph);
   const [selectedNode, setSelectedNode] = useState<GraphNode | undefined>();
-  const [inspection, setInspection] = useState<InspectionResponse | undefined>();
   const [prediction, setPrediction] = useState<PredictionResponse | undefined>();
   const [liveRuns, setLiveRuns] = useState<RunSummary[]>([]);
-  const [busy, setBusy] = useState<"inspect" | "source" | "train" | "forward" | undefined>();
+  const [busy, setBusy] = useState<"resource" | "train" | "forward" | undefined>();
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [detailRunId, setDetailRunId] = useState<string | undefined>();
   const [detailInitialTab, setDetailInitialTab] = useState<"overview" | "source">("overview");
-  const [importCandidate, setImportCandidate] = useState<File | undefined>();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<"monitor" | "history">("monitor");
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
@@ -121,17 +114,19 @@ export default function App() {
     loadDemoGraph();
   }, [loadDemoGraph]);
 
+  const refreshRuns = useCallback(() => {
+    return listRuns()
+      .then(setLiveRuns)
+      .catch(() => setLiveRuns([]));
+  }, []);
+
   useEffect(() => {
     if (backendStatus !== "ok") return;
-    const pollRuns = () => {
-      listRuns()
-        .then(setLiveRuns)
-        .catch(() => setLiveRuns([]));
-    };
+    const pollRuns = () => refreshRuns();
     pollRuns();
     const timer = window.setInterval(pollRuns, RUNS_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [backendStatus]);
+  }, [backendStatus, refreshRuns]);
 
   // a live run's registered graph replaces the displayed model graph
   useEffect(() => {
@@ -144,43 +139,35 @@ export default function App() {
   const latestStep = stream.metrics.length ? stream.metrics[stream.metrics.length - 1].step : 0;
   const runBuckets = useMemo(() => splitRunBuckets(liveRuns), [liveRuns]);
 
-  const handleInspect = async (file: File) => {
+  const handleResourceUpload = (files: NamedSourceFile[]) => {
     stream.reset();
-    setBusy("inspect");
+    setBusy("resource");
     setErrorMessage(undefined);
-    try {
-      const result = await inspectFile(file);
-      setInspection(result);
-      setGraph(result.graph);
-      setSelectedNode(firstDisplayNode(result.graph));
-      setPrediction(undefined);
-      setImportCandidate(undefined);
-      if (result.matched_run_id) {
-        setForwardTarget({ runId: result.matched_run_id });
-        setCurrentRunKind("recorded-training");
-        setDetailInitialTab("overview");
-        setDetailRunId(result.matched_run_id);
-      } else if (result.weights_fingerprint) {
-        setForwardTarget(undefined);
-        setImportCandidate(file);
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Inspection failed.");
-    } finally {
+    const entryFile = files[0]?.path;
+    if (!entryFile) {
+      setErrorMessage("Upload a Python resource before training.");
       setBusy(undefined);
+      return;
     }
+    setSourceRecipe({ files, entryFile });
+    setPrediction(undefined);
+    setForwardTarget(undefined);
+    setPendingForwardRun(undefined);
+    setCurrentRunKind(undefined);
+    setBusy(undefined);
   };
 
   const handleRunForward = async () => {
+    const target = resolveForwardTarget(forwardTarget);
+    if (target.mode !== "run") {
+      setErrorMessage("Run training before inference.");
+      return;
+    }
     setBusy("forward");
     setErrorMessage(undefined);
     try {
       const index = Math.floor(Math.random() * 20);
-      const target = resolveForwardTarget(forwardTarget);
-      const result =
-        target.mode === "run"
-          ? await runForward(target.runId, target.checkpointStep, index)
-          : await getDemoForward(index);
+      const result = await runForward(target.runId, target.checkpointStep, index);
       applyPredictionResult(result);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Forward pass failed.");
@@ -189,54 +176,27 @@ export default function App() {
     }
   };
 
-  const handleSourceImport = async (files: NamedSourceFile[]) => {
-    stream.reset();
-    setBusy("source");
-    setErrorMessage(undefined);
-    try {
-      const analysis = await analyzeSourceCandidates(files);
-      const selected = analysis.candidates[0];
-      if (!selected) throw new Error("No nn.Module subclass was found in the uploaded files.");
-      setSourceRecipe({ files, entryFile: selected.file, entryClass: selected.class_name });
-      const result = await importSourceRun(files, selected.file, selected.class_name);
-      setInspection(undefined);
-      setImportCandidate(undefined);
-      setGraph(result.graph);
-      setSelectedNode(firstDisplayNode(result.graph));
-      setForwardTarget({ runId: result.run_id, checkpointStep: result.checkpoint?.step ?? 0 });
-      setCurrentRunKind("source-import");
-      setPage("monitor");
-      stream.startStream(result.run_id);
-      applyPredictionResult(await runForward(result.run_id, result.checkpoint?.step ?? 0));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Creating a run from source failed.");
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
-  const handleSourceTrain = async () => {
+  const handleRunTraining = async () => {
     if (!sourceRecipe) {
-      setErrorMessage("Upload Python source before training.");
+      setErrorMessage("Upload a training resource before training.");
       return;
     }
     stream.reset();
     setBusy("train");
     setErrorMessage(undefined);
     try {
-      const result = await trainSourceRun(sourceRecipe.files, sourceRecipe.entryFile, sourceRecipe.entryClass);
-      setInspection(undefined);
-      setImportCandidate(undefined);
+      const result = await trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile);
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
       setPrediction(undefined);
       setForwardTarget({ runId: result.run_id });
       setPendingForwardRun(result.run_id);
-      setCurrentRunKind("source-training");
+      setCurrentRunKind("resource-training");
       setPage("monitor");
       stream.startStream(result.run_id);
+      void refreshRuns();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Training source failed.");
+      setErrorMessage(error instanceof Error ? error.message : "Training resource failed.");
     } finally {
       setBusy(undefined);
     }
@@ -268,12 +228,6 @@ export default function App() {
     };
   }, [pendingForwardRun, stream.status]);
 
-  const handleStartStream = () => {
-    setErrorMessage(undefined);
-    const target = resolveForwardTarget(forwardTarget);
-    stream.startStream(target.mode === "run" ? target.runId : undefined);
-  };
-
   const handleWatchRun = (runId: string) => {
     setErrorMessage(undefined);
     setForwardTarget({ runId });
@@ -282,26 +236,28 @@ export default function App() {
     stream.startStream(runId);
   };
 
-  const handleImportForAttach = async () => {
-    if (!importCandidate) return;
+  const handleDeleteRun = async (runId: string) => {
     setErrorMessage(undefined);
     try {
-      const result = await importArtifact(importCandidate);
-      setImportCandidate(undefined);
-      setDetailInitialTab("source");
-      setDetailRunId(result.run_id);
+      await deleteRun(runId);
+      if (stream.runId === runId) stream.reset();
+      if (detailRunId === runId) setDetailRunId(undefined);
+      setLiveRuns((runs) => runs.filter((run) => run.run_id !== runId));
+      if (forwardTarget?.runId === runId) {
+        setForwardTarget(undefined);
+        setPrediction(undefined);
+      }
+      void refreshRuns();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Importing the artifact failed.");
+      setErrorMessage(error instanceof Error ? error.message : "Deleting the run failed.");
     }
   };
 
   const handleReset = () => {
     stream.reset();
     setPrediction(undefined);
-    setInspection(undefined);
     setErrorMessage(undefined);
     setDetailRunId(undefined);
-    setImportCandidate(undefined);
     setForwardTarget(undefined);
     setPendingForwardRun(undefined);
     setSourceRecipe(undefined);
@@ -309,7 +265,6 @@ export default function App() {
     loadDemoGraph();
   };
 
-  const warnings = inspection?.warnings ?? [];
   const predictionSummary = prediction
     ? `${prediction.prediction} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
     : "";
@@ -336,21 +291,17 @@ export default function App() {
       {page === "monitor" ? (
         <div className="workspace">
           <ControlRail
-            onInspect={handleInspect}
-            onSourceImport={handleSourceImport}
-            onTrainSource={handleSourceTrain}
+            onResourceUpload={handleResourceUpload}
+            onRunTraining={handleRunTraining}
             onRunForward={handleRunForward}
-            onStartStream={handleStartStream}
             onReset={handleReset}
             onWatchRun={handleWatchRun}
             onOpenDetail={(runId) => {
               setDetailInitialTab("overview");
               setDetailRunId(runId);
             }}
-            onImportAttach={handleImportForAttach}
-            importAvailable={Boolean(importCandidate)}
             trainAvailable={Boolean(sourceRecipe)}
-            forwardTargetLabel={describeForwardTarget(forwardTarget)}
+            forwardTargetLabel={forwardTarget ? describeForwardTarget(forwardTarget) : "none"}
             currentRunKind={currentRunKind}
             metricCount={stream.metrics.length}
             eventCount={stream.events.length}
@@ -358,7 +309,6 @@ export default function App() {
             liveRuns={runBuckets.active}
             watchedRunId={stream.runId}
             busy={busy}
-            streaming={stream.status === "streaming"}
             errorMessage={errorMessage}
           />
           <ModelGraphPanel
@@ -378,6 +328,7 @@ export default function App() {
             setDetailInitialTab("overview");
             setDetailRunId(runId);
           }}
+          onDeleteRun={handleDeleteRun}
         />
       )}
 
@@ -403,10 +354,7 @@ export default function App() {
           </div>
           <div className="event-list">
             {errorMessage && <div className="event warning">{errorMessage}</div>}
-            {warnings.map((warning) => (
-              <div className="event warning" key={warning}>{warning}</div>
-            ))}
-            {stream.events.length === 0 && !errorMessage && warnings.length === 0 && (
+            {stream.events.length === 0 && !errorMessage && (
               <p className="empty-hint">No events</p>
             )}
             {stream.events.map((event) => (

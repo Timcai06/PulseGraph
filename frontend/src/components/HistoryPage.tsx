@@ -1,4 +1,4 @@
-import { FileText, Play, Radio } from "lucide-react";
+import { FileText, Play, Radio, Trash2 } from "lucide-react";
 import type { RunSummary } from "../api/client";
 
 type Props = {
@@ -6,6 +6,7 @@ type Props = {
   watchedRunId?: string;
   onWatchRun: (runId: string) => void;
   onOpenDetail: (runId: string) => void;
+  onDeleteRun: (runId: string) => void;
 };
 
 function formatTime(seconds: number) {
@@ -13,13 +14,13 @@ function formatTime(seconds: number) {
   return new Date(seconds * 1000).toLocaleString();
 }
 
-export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail }: Props) {
+export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDeleteRun }: Props) {
   return (
     <section className="history-page">
       <header className="page-heading">
         <div>
           <h2>Run History</h2>
-          <p>Completed source imports and training runs stay here for replay, reports, and checkpoint inspection.</p>
+          <p>Completed training runs stay here for replay, reports, and checkpoint inspection.</p>
         </div>
         <span>{runs.length} completed runs</span>
       </header>
@@ -53,6 +54,9 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail }: Pr
                 </button>
                 <button onClick={() => onOpenDetail(run.run_id)} type="button">
                   <FileText size={14} /> Detail
+                </button>
+                <button className="secondary" onClick={() => onDeleteRun(run.run_id)} type="button">
+                  <Trash2 size={14} /> Delete
                 </button>
                 <Radio size={14} className={watchedRunId === run.run_id ? "history-watching" : ""} />
               </div>

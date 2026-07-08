@@ -1,17 +1,13 @@
-import { Dumbbell, FileCode2, Info, Loader2, Play, Radio, RotateCcw, Upload, Zap } from "lucide-react";
+import { Dumbbell, FileCode2, Info, Loader2, Radio, RotateCcw, Zap } from "lucide-react";
 import type { NamedSourceFile, RunSummary } from "../api/client";
 
 type Props = {
-  onInspect: (file: File) => void;
-  onSourceImport: (files: NamedSourceFile[]) => void;
-  onTrainSource: () => void;
+  onResourceUpload: (files: NamedSourceFile[]) => void;
+  onRunTraining: () => void;
   onRunForward: () => void;
-  onStartStream: () => void;
   onReset: () => void;
   onWatchRun: (runId: string) => void;
   onOpenDetail: (runId: string) => void;
-  onImportAttach: () => void;
-  importAvailable: boolean;
   trainAvailable: boolean;
   forwardTargetLabel: string;
   currentRunKind?: string;
@@ -20,8 +16,7 @@ type Props = {
   hasPrediction: boolean;
   liveRuns: RunSummary[];
   watchedRunId?: string;
-  busy?: "inspect" | "source" | "train" | "forward";
-  streaming: boolean;
+  busy?: "resource" | "train" | "forward";
   errorMessage?: string;
 };
 
@@ -33,16 +28,12 @@ function toNamedFiles(list: FileList | null): NamedSourceFile[] {
 }
 
 export function ControlRail({
-  onInspect,
-  onSourceImport,
-  onTrainSource,
+  onResourceUpload,
+  onRunTraining,
   onRunForward,
-  onStartStream,
   onReset,
   onWatchRun,
   onOpenDetail,
-  onImportAttach,
-  importAvailable,
   trainAvailable,
   forwardTargetLabel,
   currentRunKind,
@@ -52,38 +43,29 @@ export function ControlRail({
   liveRuns,
   watchedRunId,
   busy,
-  streaming,
   errorMessage
 }: Props) {
-  const streamLabel =
-    currentRunKind === "source-import"
-      ? "Replay events"
-      : currentRunKind === "source-training" || currentRunKind === "recorded-training"
-        ? "Stream training"
-        : "Demo stream";
-  const streamAction = streaming ? `Restart ${streamLabel.toLowerCase()}` : streamLabel;
-
   return (
     <aside className="control-rail">
       <section>
-        <h2>Python Source</h2>
-        <label className={`file-drop primary-drop ${busy === "source" ? "busy" : ""}`}>
-          {busy === "source" ? <Loader2 size={18} className="spin" /> : <FileCode2 size={18} />}
-          <span>{busy === "source" ? "Creating run…" : "Import .py / .zip"}</span>
+        <h2>Training Resource</h2>
+        <label className={`file-drop primary-drop ${busy === "resource" ? "busy" : ""}`}>
+          {busy === "resource" ? <Loader2 size={18} className="spin" /> : <FileCode2 size={18} />}
+          <span>{busy === "resource" ? "Loading…" : "Import .py / .zip"}</span>
           <input
             type="file"
             multiple
             accept=".py,.zip"
-            disabled={busy === "source"}
+            disabled={busy === "resource"}
             onChange={(event) => {
               const files = toNamedFiles(event.target.files);
-              if (files.length) onSourceImport(files);
+              if (files.length) onResourceUpload(files);
               event.target.value = "";
             }}
           />
         </label>
-        <button onClick={onTrainSource} disabled={!trainAvailable || busy === "train"} type="button">
-          {busy === "train" ? <Loader2 size={16} className="spin" /> : <Dumbbell size={16} />} Train source
+        <button onClick={onRunTraining} disabled={!trainAvailable || busy === "train"} type="button">
+          {busy === "train" ? <Loader2 size={16} className="spin" /> : <Dumbbell size={16} />} Run Training
         </button>
         {errorMessage && <p className="error-hint">{errorMessage}</p>}
       </section>
@@ -114,35 +96,9 @@ export function ControlRail({
       </section>
 
       <section>
-        <h2>Weights File</h2>
-        <label className={`file-drop compact-drop ${busy === "inspect" ? "busy" : ""}`}>
-          {busy === "inspect" ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
-          <span>{busy === "inspect" ? "Inspecting…" : "Inspect .pt"}</span>
-          <input
-            type="file"
-            accept=".pt,.pth"
-            disabled={busy === "inspect"}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onInspect(file);
-              event.target.value = "";
-            }}
-          />
-        </label>
-        {importAvailable && (
-          <button onClick={onImportAttach} type="button">
-            <FileCode2 size={16} /> Attach source for replay
-          </button>
-        )}
-      </section>
-
-      <section>
-        <h2>Forward</h2>
+        <h2>Inference</h2>
         <button onClick={onRunForward} disabled={busy === "forward"}>
-          {busy === "forward" ? <Loader2 size={16} className="spin" /> : <Zap size={16} />} Run forward
-        </button>
-        <button onClick={onStartStream}>
-          <Play size={16} /> {streamAction}
+          {busy === "forward" ? <Loader2 size={16} className="spin" /> : <Zap size={16} />} Run Inference
         </button>
         <button className="secondary" onClick={onReset}>
           <RotateCcw size={16} /> Reset

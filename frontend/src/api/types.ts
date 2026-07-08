@@ -218,7 +218,12 @@ export type ImportArtifactResult = {
 
 export type SourceImportResult = {
   run_id: string;
-  run_kind: "source-import" | "source-training";
+  run_kind: "source-import" | "source-training" | "resource-training";
+  resource?: {
+    name: string;
+    input_shape?: number[] | null;
+    classes?: number | null;
+  } | null;
   inference_only: boolean;
   saved: string[];
   entry_file: string;

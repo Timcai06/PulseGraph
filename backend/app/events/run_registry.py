@@ -85,6 +85,9 @@ class RunRegistry:
     def get(self, run_id: str) -> LiveRun | None:
         return self._runs.get(run_id)
 
+    def delete(self, run_id: str) -> bool:
+        return self._runs.pop(run_id, None) is not None
+
     def list_runs(self) -> list[RunSummary]:
         runs = sorted(self._runs.values(), key=lambda run: run.created_at, reverse=True)
         return [

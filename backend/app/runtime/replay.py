@@ -6,6 +6,7 @@ from app.events.run_registry import run_registry
 from app.events.run_store import RunStore
 from app.inspector.graph_builder import build_inferred_graph
 from app.inspector.pt_inspector import summarize_tensor
+from app.resources.contract import ResourceContractError, load_training_resource
 from app.runtime import mnist_data
 from app.runtime.model_loader import forward_with_model, load_model_and_weights
 from app.schemas import LayerSnapshot, ModelGraph, PredictionResponse, RunDetail
@@ -72,9 +73,25 @@ def run_replay_forward(store: RunStore, run_id: str, checkpoint_step: int = 0, i
     checkpoint_path = store.checkpoint_path(run_id, checkpoint_step or None)
     if checkpoint_path is None:
         raise ReplayError(404, "No matching checkpoint was found for this run.")
-    model = load_model_and_weights(source_path, entry_class, checkpoint_path, source_root=store.run_dir(run_id) / "source")
-    if model is None:
-        raise ReplayError(500, "Failed to rebuild the model from recorded source and checkpoint.")
+    if config.get("run_kind") == "resource-training":
+        try:
+            resource = load_training_resource(source_path, source_root=store.run_dir(run_id) / "source")
+            model = resource.build_model()
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+            if not isinstance(state_dict, dict):
+                raise ReplayError(500, "Recorded checkpoint is not a state_dict.")
+            model.load_state_dict(state_dict)
+            model.eval()
+        except ResourceContractError as exc:
+            raise ReplayError(400, str(exc)) from exc
+        except ReplayError:
+            raise
+        except Exception as exc:
+            raise ReplayError(500, f"Failed to rebuild the resource model: {exc}") from exc
+    else:
+        model = load_model_and_weights(source_path, entry_class, checkpoint_path, source_root=store.run_dir(run_id) / "source")
+        if model is None:
+            raise ReplayError(500, "Failed to rebuild the model from recorded source and checkpoint.")
 
     image, label, sample_source = _pick_sample(store, run_id, index)
     try:

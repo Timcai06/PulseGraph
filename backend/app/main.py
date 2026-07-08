@@ -13,6 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
+from app.api.routes_runs import create_runs_router
 from app.events.run_registry import run_registry
 from app.events.run_store import RunStore
 from app.events.training_stream import demo_training_events, to_sse
@@ -22,11 +23,12 @@ from app.inspector.graph_builder import build_graph_from_tensor_specs
 from app.inspector.pt_inspector import inspect_pt_file
 from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
+from app.resources.contract import ResourceContractError, load_training_resource
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
 from app.reports.analyzer import build_run_report
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
 from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
-from app.schemas import RunDetail, RunEvent, RunSummary
+from app.schemas import RunDetail, RunEvent
 
 
 app = FastAPI(title="PulseGraph API", version="0.1.0")
@@ -50,6 +52,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(create_runs_router(run_registry, run_store))
 
 
 @app.get("/health")
@@ -74,11 +77,6 @@ async def stream_demo_run():
             yield to_sse(event)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
-
-
-@app.get("/api/runs")
-def list_runs() -> list[RunSummary]:
-    return run_registry.list_runs()
 
 
 def _persist_registration(run_id: str, event: RunEvent) -> None:
@@ -289,6 +287,7 @@ def _publish_source_training_events(
     layers_by_step: list[tuple[int, list[dict]]],
     checkpoint_path: Path,
     fingerprint: str,
+    run_kind: str = "source-training",
 ) -> None:
     run_registry.publish(run_id, [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})])
     if SOURCE_TRAIN_EVENT_INTERVAL_SEC:
@@ -365,7 +364,7 @@ def _publish_source_training_events(
                 "run_complete",
                 "training",
                 final_step,
-                {"status": "trained", "run_kind": "source-training", "inference_only": False},
+                {"status": "trained", "run_kind": run_kind, "inference_only": False},
             ),
         ],
     )
@@ -445,6 +444,194 @@ def _run_source_training_job(
     run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
 
     _publish_source_training_events(run_id, graph, metrics, layers_by_step, checkpoint_path, fingerprint)
+
+
+def _as_model_input(sample: torch.Tensor) -> torch.Tensor:
+    return sample.unsqueeze(0) if sample.dim() == 1 else sample
+
+
+def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, torch.Tensor]:
+    images: list[torch.Tensor] = []
+    labels: list[int] = []
+    for index in range(limit):
+        image, label = resource.inference_sample(index)
+        images.append(_as_model_input(image))
+        labels.append(int(label))
+    return torch.cat(images, dim=0).detach().cpu(), torch.tensor(labels, dtype=torch.long)
+
+
+def _run_resource_training_job(
+    run_id: str,
+    source_path: Path,
+    source_root: Path,
+    graph,
+    steps: int,
+) -> None:
+    try:
+        resource = load_training_resource(source_path, source_root=source_root)
+    except ResourceContractError as exc:
+        run_registry.publish(
+            run_id,
+            [
+                _run_event(
+                    run_id,
+                    "run_complete",
+                    "training",
+                    0,
+                    {"status": "failed", "run_kind": "resource-training", "error": str(exc)},
+                )
+            ],
+        )
+        return
+
+    model = resource.build_model()
+    batch_size = max(1, min(resource.batch_size, 64))
+    learning_rate = resource.learning_rate
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    metrics: list[dict] = []
+    layers_by_step: list[tuple[int, list[dict]]] = []
+    start = time.perf_counter()
+
+    model.train()
+    for step in range(1, steps + 1):
+        images, labels = resource.train_batch(step, batch_size)
+        step_start = time.perf_counter()
+        logits = model(images)
+        loss = loss_fn(logits, labels)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        step_time_ms = (time.perf_counter() - step_start) * 1000
+        accuracy = float((logits.argmax(dim=1) == labels).float().mean().item())
+        metrics.append(
+            {
+                "step": step,
+                "loss": round(float(loss.item()), 4),
+                "accuracy": round(accuracy, 4),
+                "learning_rate": learning_rate,
+                "step_time_ms": round(step_time_ms, 2),
+                "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
+                "elapsed_sec": round(time.perf_counter() - start, 2),
+            }
+        )
+        model.eval()
+        snapshot = forward_with_model(model, images[:1])
+        layers_by_step.append((step, snapshot["layers"]))
+        model.train()
+
+    run_store.save_config(
+        run_id,
+        {
+            "source": "training-resource",
+            "run_kind": "resource-training",
+            "resource_name": resource.name,
+            "inference_only": False,
+            "training_status": "completed",
+            "training_recipe": "resource-contract",
+            "steps": steps,
+            "batch_size": batch_size,
+            "lr": learning_rate,
+            "entry_file": run_store.load_entry_meta(run_id)["entry_file"] if run_store.load_entry_meta(run_id) else None,
+            "entry_class": run_store.load_entry_class(run_id),
+            "input_shape": resource.input_shape,
+            "classes": resource.classes,
+            "weights": "trained",
+        },
+    )
+
+    sample = io.BytesIO()
+    probe_images, probe_labels = _resource_probe_samples(resource, min(16, batch_size))
+    torch.save({"images": probe_images, "labels": probe_labels}, sample)
+    run_store.save_samples(run_id, sample.getvalue())
+
+    checkpoint = io.BytesIO()
+    torch.save(model.state_dict(), checkpoint)
+    checkpoint_path = run_store.save_checkpoint_bytes(run_id, steps, checkpoint.getvalue(), epoch=1)
+    fingerprint = fingerprint_state_dict(model.state_dict())
+    run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
+
+    _publish_source_training_events(
+        run_id,
+        graph,
+        metrics,
+        layers_by_step,
+        checkpoint_path,
+        fingerprint,
+        run_kind="resource-training",
+    )
+
+
+@app.post("/api/runs/train-resource")
+async def train_run_from_resource(
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    entry_file: str = Form(...),
+    steps: int = Form(8),
+):
+    collected = await _collect_source_files(files)
+    if not collected:
+        raise HTTPException(status_code=400, detail="No Python resource files were found in the upload.")
+
+    run_id = f"resource-{uuid.uuid4().hex[:12]}"
+    normalized_entry = entry_file.replace("\\", "/")
+    saved = run_store.save_source_files(run_id, collected, normalized_entry, "TrainingResource")
+    if normalized_entry not in saved:
+        raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
+
+    source_path = run_store.source_path(run_id)
+    if source_path is None:
+        raise HTTPException(status_code=400, detail="Entry resource could not be saved.")
+    source_root = run_store.run_dir(run_id) / "source"
+    try:
+        resource = load_training_resource(source_path, source_root=source_root)
+        model = resource.build_model()
+        example_input = _as_model_input(resource.inference_sample(0)[0])
+    except ResourceContractError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        graph = trace_model_graph(model, example_input)
+    except Exception:
+        graph = build_graph_from_tensor_specs(
+            [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
+        )
+
+    steps = max(1, min(int(steps), 50))
+    run_store.save_config(
+        run_id,
+        {
+            "source": "training-resource",
+            "run_kind": "resource-training",
+            "resource_name": resource.name,
+            "inference_only": False,
+            "training_status": "running",
+            "training_recipe": "resource-contract",
+            "steps": steps,
+            "batch_size": resource.batch_size,
+            "lr": resource.learning_rate,
+            "entry_file": normalized_entry,
+            "entry_class": "TrainingResource",
+            "input_shape": resource.input_shape,
+            "classes": resource.classes,
+            "weights": "training",
+        },
+    )
+    run_store.save_graph(run_id, graph.model_dump())
+    run_registry.publish(run_id, [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})])
+    background_tasks.add_task(_run_resource_training_job, run_id, source_path, source_root, graph, steps)
+    return {
+        "run_id": run_id,
+        "run_kind": "resource-training",
+        "resource": {"name": resource.name, "input_shape": resource.input_shape, "classes": resource.classes},
+        "inference_only": False,
+        "status": "started",
+        "saved": saved,
+        "entry_file": normalized_entry,
+        "entry_class": "TrainingResource",
+        "graph": graph.model_dump(),
+        "checkpoint": None,
+    }
 
 
 @app.post("/api/inspect/source/candidates")

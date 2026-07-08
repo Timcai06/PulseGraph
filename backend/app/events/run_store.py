@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,21 @@ class RunStore:
         directory = runs_dir() / safe_run_id(run_id)
         directory.mkdir(parents=True, exist_ok=True)
         return directory
+
+    def existing_run_dir(self, run_id: str) -> Path:
+        return runs_dir() / safe_run_id(run_id)
+
+    def delete_run(self, run_id: str) -> bool:
+        deleted = False
+        directory = self.existing_run_dir(run_id)
+        if directory.exists():
+            shutil.rmtree(directory)
+            deleted = True
+        legacy = runs_dir() / f"{safe_run_id(run_id)}.jsonl"
+        if legacy.exists():
+            legacy.unlink()
+            deleted = True
+        return deleted
 
     def _events_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "events.jsonl"

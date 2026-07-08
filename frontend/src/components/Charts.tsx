@@ -34,12 +34,12 @@ type MetricsProps = {
 
 function emptyMetricMessage(status: StreamStatus, runKind?: string) {
   if (runKind === "source-import") {
-    return "This run is an inference replay. Use Train source to create loss, accuracy, and infra telemetry.";
+    return "This run is an inference replay. Use Run Training to create loss, accuracy, and infra telemetry.";
   }
   if (status === "streaming") {
     return "Waiting for training metrics from the current run.";
   }
-  return "Train source or watch a recorded training run to populate telemetry.";
+  return "Run training or watch a recorded training run to populate telemetry.";
 }
 
 export function MetricChart({ points, status = "idle", theme = "dark", runKind }: MetricsProps) {

@@ -25,4 +25,23 @@ describe("App workspace layout", () => {
     expect(appSource).toContain("pendingForwardRun");
     expect(appSource).not.toContain("applyPredictionResult(await runForward(result.run_id, result.checkpoint.step));");
   });
+
+  it("uses a single training resource workflow instead of source and pt side paths", () => {
+    const combined = [appSource, controlRailSource].join("\n");
+
+    expect(combined).toContain("Training Resource");
+    expect(combined).toContain("Run Training");
+    expect(combined).toContain("Run Inference");
+    expect(combined).not.toContain("Weights File");
+    expect(combined).not.toContain("Inspect .pt");
+    expect(combined).not.toContain("Train source");
+    expect(appSource).not.toContain("importArtifact");
+    expect(appSource).not.toContain("inspectFile");
+    expect(appSource).not.toContain("importSourceRun");
+  });
+
+  it("exposes deletion from history", () => {
+    expect(appSource).toContain("handleDeleteRun");
+    expect(controlRailSource).not.toContain("Weights File");
+  });
 });
