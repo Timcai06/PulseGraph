@@ -18,13 +18,22 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
   const probabilities = prediction?.probabilities ?? [];
   const top = topPredictions(probabilities);
   const pixelCount = prediction?.image_pixels.length ?? 0;
+  const confidence = top[0]?.value ?? 0;
 
   return (
     <div className="inference-body">
-      <DigitPreview pixels={prediction?.image_pixels} label={prediction?.label} prediction={prediction?.prediction} />
+      <div className="recognition-image">
+        <span>Input image</span>
+        <DigitPreview pixels={prediction?.image_pixels} label={prediction?.label} prediction={prediction?.prediction} />
+      </div>
       <div className="inference-result">
         {prediction ? (
           <>
+            <div className="recognition-callout">
+              <span>Model recognized</span>
+              <strong>{prediction.prediction}</strong>
+              <em>{(confidence * 100).toFixed(1)}% confidence</em>
+            </div>
             <dl className="inference-stats">
               <div>
                 <dt>prediction</dt>
@@ -52,7 +61,7 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
             </div>
           </>
         ) : (
-          <p className="empty-hint">Run forward to inspect prediction, tensor sample, and probabilities.</p>
+          <p className="empty-hint">Run forward to show the input image, recognized digit, and class probabilities.</p>
         )}
         <ProbabilityChart
           probabilities={probabilities.length ? probabilities : Array(10).fill(0)}

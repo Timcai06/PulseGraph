@@ -24,7 +24,7 @@ from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
 from app.reports.analyzer import build_run_report
-from app.runtime.demo_mlp import demo_graph, run_demo_forward
+from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
 from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
 from app.schemas import RunDetail, RunEvent, RunSummary
 
@@ -251,6 +251,23 @@ def _batch_like(example_input: torch.Tensor, batch_size: int) -> torch.Tensor:
     shape = list(example_input.shape)
     shape[0] = batch_size
     return torch.rand(*shape)
+
+
+def _is_mnist_like(example_input: torch.Tensor) -> bool:
+    return list(example_input.shape[1:]) == [1, 28, 28]
+
+
+def _probe_batch_like(example_input: torch.Tensor, batch_size: int, classes: int) -> tuple[torch.Tensor, torch.Tensor]:
+    if _is_mnist_like(example_input):
+        images: list[torch.Tensor] = []
+        labels: list[int] = []
+        visible_classes = max(1, min(classes, 10))
+        for index in range(batch_size):
+            image, label, _ = sample_digit(index % visible_classes)
+            images.append(image)
+            labels.append(label if label < classes else label % classes)
+        return torch.cat(images, dim=0).to(dtype=example_input.dtype), torch.tensor(labels, dtype=torch.long)
+    return _batch_like(example_input, batch_size), torch.randint(0, classes, (batch_size,))
 
 
 def _class_count(model: torch.nn.Module, example_input: torch.Tensor) -> int | None:
@@ -499,8 +516,7 @@ async def train_run_from_source(
 
     model.train()
     for step in range(1, steps + 1):
-        images = _batch_like(example_input, batch_size)
-        labels = torch.randint(0, classes, (batch_size,))
+        images, labels = _probe_batch_like(example_input, batch_size, classes)
         step_start = time.perf_counter()
         logits = model(images)
         loss = loss_fn(logits, labels)
@@ -546,7 +562,8 @@ async def train_run_from_source(
     run_store.save_graph(run_id, graph.model_dump())
 
     sample = io.BytesIO()
-    torch.save({"images": _batch_like(example_input, min(16, batch_size)).detach().cpu(), "labels": torch.arange(min(16, batch_size)) % classes}, sample)
+    probe_images, probe_labels = _probe_batch_like(example_input, min(16, batch_size), classes)
+    torch.save({"images": probe_images.detach().cpu(), "labels": probe_labels.detach().cpu()}, sample)
     run_store.save_samples(run_id, sample.getvalue())
 
     checkpoint = io.BytesIO()

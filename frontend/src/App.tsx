@@ -375,7 +375,7 @@ export default function App() {
         </div>
         <div className="prediction-panel">
           <div className="panel-heading">
-            <h2>Inference Probe</h2>
+            <h2>Recognition Result</h2>
             <span>{predictionSummary}</span>
           </div>
           <InferenceProbe prediction={prediction} theme={theme} />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { openDemoStream, openRunStream, type LayerSnapshot, type ModelGraph, type RunEvent } from "../api/client";
+import { replayDelayMs, shouldCloseAfterReplay } from "../lib/streamReplay";
 
 export type StreamStatus = "idle" | "streaming" | "complete" | "error";
 
@@ -140,19 +141,33 @@ function reducer(state: StreamState, action: StreamAction): StreamState {
 export function useRunStream() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const sourceRef = useRef<EventSource | null>(null);
+  const timersRef = useRef<number[]>([]);
+  const replayIndexRef = useRef(0);
 
   const closeSource = useCallback(() => {
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
 
+  const clearReplayTimers = useCallback(() => {
+    for (const timer of timersRef.current) window.clearTimeout(timer);
+    timersRef.current = [];
+    replayIndexRef.current = 0;
+  }, []);
+
   const startStream = useCallback(
     (runId?: string) => {
       closeSource();
+      clearReplayTimers();
       dispatch({ type: "start", runId });
       const onEvent = (event: RunEvent) => {
-        dispatch({ type: "event", event });
-        if (event.type === "run_complete") closeSource();
+        const delay = replayDelayMs(replayIndexRef.current, runId);
+        replayIndexRef.current += 1;
+        const timer = window.setTimeout(() => {
+          dispatch({ type: "event", event });
+          if (shouldCloseAfterReplay(event)) closeSource();
+        }, delay);
+        timersRef.current.push(timer);
       };
       const source = runId ? openRunStream(runId, onEvent) : openDemoStream(onEvent);
       source.onerror = () => {
@@ -163,13 +178,14 @@ export function useRunStream() {
       };
       sourceRef.current = source;
     },
-    [closeSource]
+    [clearReplayTimers, closeSource]
   );
 
   const reset = useCallback(() => {
     closeSource();
+    clearReplayTimers();
     dispatch({ type: "reset" });
-  }, [closeSource]);
+  }, [clearReplayTimers, closeSource]);
 
   const applyPrediction = useCallback((layers: LayerSnapshot[], pulsedNodeId?: string) => {
     dispatch({
@@ -179,7 +195,13 @@ export function useRunStream() {
     });
   }, []);
 
-  useEffect(() => closeSource, [closeSource]);
+  useEffect(
+    () => () => {
+      closeSource();
+      clearReplayTimers();
+    },
+    [clearReplayTimers, closeSource]
+  );
 
   return { ...state, startStream, reset, applyPrediction };
 }

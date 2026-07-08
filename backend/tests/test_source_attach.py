@@ -161,6 +161,10 @@ def test_train_source_file_creates_training_metrics_and_trained_forward() -> Non
     forward = client.get(f"/api/runs/{run_id}/forward?index=0").json()
     assert len(forward["probabilities"]) == 10
     assert forward["weights"] == "trained"
+    assert forward["sample_source"] == "probe"
+    assert forward["label"] == 0
+    assert len(forward["image_pixels"]) == 28 * 28
+    assert max(forward["image_pixels"]) > 0.4
 
     stream = client.get(f"/api/runs/{run_id}/stream")
     assert "event: metric" in stream.text
