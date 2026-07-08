@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
@@ -41,6 +41,7 @@ def restore_persisted_runs() -> None:
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_ARTIFACT_UPLOAD_BYTES = 50 * 1024 * 1024
+SOURCE_TRAIN_EVENT_INTERVAL_SEC = 0.14
 
 app.add_middleware(
     CORSMiddleware,
@@ -289,10 +290,14 @@ def _publish_source_training_events(
     checkpoint_path: Path,
     fingerprint: str,
 ) -> None:
-    events = [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})]
+    run_registry.publish(run_id, [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})])
+    if SOURCE_TRAIN_EVENT_INTERVAL_SEC:
+        time.sleep(SOURCE_TRAIN_EVENT_INTERVAL_SEC)
+
+    layers_lookup = {step: layers for step, layers in layers_by_step}
     for metric in metrics:
         step = int(metric["step"])
-        events.append(
+        events = [
             _run_event(
                 run_id,
                 "metric",
@@ -304,9 +309,7 @@ def _publish_source_training_events(
                     "learning_rate": metric["learning_rate"],
                     "phase": "train",
                 },
-            )
-        )
-        events.append(
+            ),
             _run_event(
                 run_id,
                 "infra",
@@ -319,10 +322,9 @@ def _publish_source_training_events(
                     "memory_peak_mb": 0.0,
                     "elapsed_sec": metric["elapsed_sec"],
                 },
-            )
-        )
-    for step, layers in layers_by_step:
-        for layer in layers:
+            ),
+        ]
+        for layer in layers_lookup.get(step, []):
             layer_id = layer.get("layer_id")
             if isinstance(layer_id, str):
                 events.append(
@@ -339,8 +341,13 @@ def _publish_source_training_events(
                         layer=layer_id,
                     )
                 )
+        run_registry.publish(run_id, events)
+        if SOURCE_TRAIN_EVENT_INTERVAL_SEC:
+            time.sleep(SOURCE_TRAIN_EVENT_INTERVAL_SEC)
+
     final_step = int(metrics[-1]["step"]) if metrics else 0
-    events.extend(
+    run_registry.publish(
+        run_id,
         [
             _run_event(
                 run_id,
@@ -360,9 +367,84 @@ def _publish_source_training_events(
                 final_step,
                 {"status": "trained", "run_kind": "source-training", "inference_only": False},
             ),
-        ]
+        ],
     )
-    run_registry.publish(run_id, events)
+
+
+def _run_source_training_job(
+    run_id: str,
+    model: torch.nn.Module,
+    example_input: torch.Tensor,
+    classes: int,
+    graph,
+    steps: int,
+) -> None:
+    batch_size = 8
+    learning_rate = 1e-3
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    metrics: list[dict] = []
+    layers_by_step: list[tuple[int, list[dict]]] = []
+    start = time.perf_counter()
+
+    model.train()
+    for step in range(1, steps + 1):
+        images, labels = _probe_batch_like(example_input, batch_size, classes)
+        step_start = time.perf_counter()
+        logits = model(images)
+        loss = loss_fn(logits, labels)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        step_time_ms = (time.perf_counter() - step_start) * 1000
+        accuracy = float((logits.argmax(dim=1) == labels).float().mean().item())
+        metrics.append(
+            {
+                "step": step,
+                "loss": round(float(loss.item()), 4),
+                "accuracy": round(accuracy, 4),
+                "learning_rate": learning_rate,
+                "step_time_ms": round(step_time_ms, 2),
+                "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
+                "elapsed_sec": round(time.perf_counter() - start, 2),
+            }
+        )
+        model.eval()
+        snapshot = forward_with_model(model, images[:1])
+        layers_by_step.append((step, snapshot["layers"]))
+        model.train()
+
+    run_store.save_config(
+        run_id,
+        {
+            "source": "uploaded-python",
+            "run_kind": "source-training",
+            "inference_only": False,
+            "training_status": "completed",
+            "training_recipe": "local-short-classifier",
+            "steps": steps,
+            "batch_size": batch_size,
+            "lr": learning_rate,
+            "entry_file": run_store.load_entry_meta(run_id)["entry_file"] if run_store.load_entry_meta(run_id) else None,
+            "entry_class": run_store.load_entry_class(run_id),
+            "input_shape": list(example_input.shape),
+            "classes": classes,
+            "weights": "trained",
+        },
+    )
+
+    sample = io.BytesIO()
+    probe_images, probe_labels = _probe_batch_like(example_input, min(16, batch_size), classes)
+    torch.save({"images": probe_images.detach().cpu(), "labels": probe_labels.detach().cpu()}, sample)
+    run_store.save_samples(run_id, sample.getvalue())
+
+    checkpoint = io.BytesIO()
+    torch.save(model.state_dict(), checkpoint)
+    checkpoint_path = run_store.save_checkpoint_bytes(run_id, steps, checkpoint.getvalue(), epoch=1)
+    fingerprint = fingerprint_state_dict(model.state_dict())
+    run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
+
+    _publish_source_training_events(run_id, graph, metrics, layers_by_step, checkpoint_path, fingerprint)
 
 
 @app.post("/api/inspect/source/candidates")
@@ -469,6 +551,7 @@ async def import_run_from_source(
 
 @app.post("/api/runs/train-source")
 async def train_run_from_source(
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
     entry_class: str = Form(...),
@@ -506,82 +589,36 @@ async def train_run_from_source(
         )
 
     steps = max(1, min(int(steps), 50))
-    batch_size = 8
-    learning_rate = 1e-3
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    loss_fn = torch.nn.CrossEntropyLoss()
-    metrics: list[dict] = []
-    layers_by_step: list[tuple[int, list[dict]]] = []
-    start = time.perf_counter()
-
-    model.train()
-    for step in range(1, steps + 1):
-        images, labels = _probe_batch_like(example_input, batch_size, classes)
-        step_start = time.perf_counter()
-        logits = model(images)
-        loss = loss_fn(logits, labels)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        step_time_ms = (time.perf_counter() - step_start) * 1000
-        accuracy = float((logits.argmax(dim=1) == labels).float().mean().item())
-        metrics.append(
-            {
-                "step": step,
-                "loss": round(float(loss.item()), 4),
-                "accuracy": round(accuracy, 4),
-                "learning_rate": learning_rate,
-                "step_time_ms": round(step_time_ms, 2),
-                "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
-                "elapsed_sec": round(time.perf_counter() - start, 2),
-            }
-        )
-        model.eval()
-        snapshot = forward_with_model(model, images[:1])
-        layers_by_step.append((step, snapshot["layers"]))
-        model.train()
-
     run_store.save_config(
         run_id,
         {
             "source": "uploaded-python",
             "run_kind": "source-training",
             "inference_only": False,
-            "training_status": "completed",
+            "training_status": "running",
             "training_recipe": "local-short-classifier",
             "steps": steps,
-            "batch_size": batch_size,
-            "lr": learning_rate,
+            "batch_size": 8,
+            "lr": 1e-3,
             "entry_file": normalized_entry,
             "entry_class": entry_class,
             "input_shape": list(example_input.shape),
             "classes": classes,
-            "weights": "trained",
+            "weights": "training",
         },
     )
     run_store.save_graph(run_id, graph.model_dump())
-
-    sample = io.BytesIO()
-    probe_images, probe_labels = _probe_batch_like(example_input, min(16, batch_size), classes)
-    torch.save({"images": probe_images.detach().cpu(), "labels": probe_labels.detach().cpu()}, sample)
-    run_store.save_samples(run_id, sample.getvalue())
-
-    checkpoint = io.BytesIO()
-    torch.save(model.state_dict(), checkpoint)
-    checkpoint_path = run_store.save_checkpoint_bytes(run_id, steps, checkpoint.getvalue(), epoch=1)
-    fingerprint = fingerprint_state_dict(model.state_dict())
-    run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
-
-    _publish_source_training_events(run_id, graph, metrics, layers_by_step, checkpoint_path, fingerprint)
+    background_tasks.add_task(_run_source_training_job, run_id, model, example_input, classes, graph, steps)
     return {
         "run_id": run_id,
         "run_kind": "source-training",
         "inference_only": False,
+        "status": "started",
         "saved": saved,
         "entry_file": normalized_entry,
         "entry_class": entry_class,
         "graph": graph.model_dump(),
-        "checkpoint": {"step": steps, "path": str(checkpoint_path), "fingerprint": fingerprint},
+        "checkpoint": None,
     }
 
 

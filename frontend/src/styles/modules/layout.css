@@ -2,7 +2,7 @@
   min-height: 100vh;
   padding: 12px;
   display: grid;
-  grid-template-rows: 64px auto minmax(520px, 1fr) 292px;
+  grid-template-rows: 64px auto minmax(480px, 1fr) 340px;
   gap: 10px;
 }
 

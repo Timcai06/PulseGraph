@@ -17,41 +17,22 @@ function topPredictions(probabilities: number[], limit = 3) {
 export function InferenceProbe({ prediction, theme = "dark" }: Props) {
   const probabilities = prediction?.probabilities ?? [];
   const top = topPredictions(probabilities);
-  const pixelCount = prediction?.image_pixels.length ?? 0;
   const confidence = top[0]?.value ?? 0;
 
   return (
     <div className="inference-body">
       <div className="recognition-image">
-        <span>Input image</span>
-        <DigitPreview pixels={prediction?.image_pixels} label={prediction?.label} prediction={prediction?.prediction} />
+        <span>Image</span>
+        <DigitPreview pixels={prediction?.image_pixels} />
       </div>
       <div className="inference-result">
         {prediction ? (
           <>
             <div className="recognition-callout">
-              <span>Model recognized</span>
+              <span>Recognized</span>
               <strong>{prediction.prediction}</strong>
               <em>{(confidence * 100).toFixed(1)}% confidence</em>
             </div>
-            <dl className="inference-stats">
-              <div>
-                <dt>prediction</dt>
-                <dd>{prediction.prediction}</dd>
-              </div>
-              <div>
-                <dt>label</dt>
-                <dd>{prediction.label}</dd>
-              </div>
-              <div>
-                <dt>sample</dt>
-                <dd>{prediction.sample_source}</dd>
-              </div>
-              <div>
-                <dt>tensor</dt>
-                <dd>{pixelCount} values</dd>
-              </div>
-            </dl>
             <div className="top-predictions">
               {top.map((item) => (
                 <span key={item.index}>
@@ -61,7 +42,7 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
             </div>
           </>
         ) : (
-          <p className="empty-hint">Run forward to show the input image, recognized digit, and class probabilities.</p>
+          <p className="empty-hint">No result</p>
         )}
         <ProbabilityChart
           probabilities={probabilities.length ? probabilities : Array(10).fill(0)}

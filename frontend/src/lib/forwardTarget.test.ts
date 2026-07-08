@@ -12,7 +12,7 @@ describe("resolveForwardTarget", () => {
   });
 
   it("labels the button target so users know whether it will run a demo or their upload", () => {
-    expect(describeForwardTarget({ runId: "source-abc", checkpointStep: 1 })).toBe("Current run: source-abc");
-    expect(describeForwardTarget(undefined)).toBe("No current run; demo forward will run.");
+    expect(describeForwardTarget({ runId: "source-abc", checkpointStep: 1 })).toBe("source-abc");
+    expect(describeForwardTarget(undefined)).toBe("demo");
   });
 });

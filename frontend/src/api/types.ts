@@ -228,7 +228,7 @@ export type SourceImportResult = {
     step: number;
     path: string;
     fingerprint: string;
-  };
+  } | null;
 };
 
 export type RunReport = {

@@ -85,7 +85,6 @@ export function ControlRail({
         <button onClick={onTrainSource} disabled={!trainAvailable || busy === "train"} type="button">
           {busy === "train" ? <Loader2 size={16} className="spin" /> : <Dumbbell size={16} />} Train source
         </button>
-        <p className="hint">Upload source, then run forward or train a short local recipe.</p>
         {errorMessage && <p className="error-hint">{errorMessage}</p>}
       </section>
 
@@ -130,19 +129,15 @@ export function ControlRail({
             }}
           />
         </label>
-        <p className="hint">Secondary path: inspect weights, then attach source when provenance is missing.</p>
         {importAvailable && (
           <button onClick={onImportAttach} type="button">
             <FileCode2 size={16} /> Attach source for replay
           </button>
         )}
-        {importAvailable && (
-          <p className="hint">No recorded provenance for these weights — attach the model source to make it replayable.</p>
-        )}
       </section>
 
       <section>
-        <h2>Forward Probe</h2>
+        <h2>Forward</h2>
         <button onClick={onRunForward} disabled={busy === "forward"}>
           {busy === "forward" ? <Loader2 size={16} className="spin" /> : <Zap size={16} />} Run forward
         </button>
@@ -156,11 +151,6 @@ export function ControlRail({
 
       <section>
         <h2>Live Runs</h2>
-        {liveRuns.length === 0 && (
-          <p className="hint">
-            No active training runs. Completed runs are in History.
-          </p>
-        )}
         {liveRuns.map((run) => (
           <div className="run-row" key={run.run_id}>
             <button

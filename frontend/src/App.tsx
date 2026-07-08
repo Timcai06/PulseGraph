@@ -37,9 +37,9 @@ const RUNS_POLL_MS = 5000;
 const THEME_KEY = "pulsegraph-theme";
 
 const sampleSourceLabel: Record<PredictionResponse["sample_source"], string> = {
-  mnist: "real MNIST sample",
-  probe: "recorded probe",
-  synthetic: "synthetic sample"
+  mnist: "MNIST",
+  probe: "probe",
+  synthetic: "synthetic"
 };
 
 function initialTheme(): Theme {
@@ -70,6 +70,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<"monitor" | "history">("monitor");
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
+  const [pendingForwardRun, setPendingForwardRun] = useState<string | undefined>();
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
   const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
   const shellRef = useRef<HTMLElement | null>(null);
@@ -202,11 +203,11 @@ export default function App() {
       setImportCandidate(undefined);
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
-      setForwardTarget({ runId: result.run_id, checkpointStep: result.checkpoint.step });
+      setForwardTarget({ runId: result.run_id, checkpointStep: result.checkpoint?.step ?? 0 });
       setCurrentRunKind("source-import");
       setPage("monitor");
       stream.startStream(result.run_id);
-      applyPredictionResult(await runForward(result.run_id, result.checkpoint.step));
+      applyPredictionResult(await runForward(result.run_id, result.checkpoint?.step ?? 0));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Creating a run from source failed.");
     } finally {
@@ -228,11 +229,12 @@ export default function App() {
       setImportCandidate(undefined);
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
-      setForwardTarget({ runId: result.run_id, checkpointStep: result.checkpoint.step });
+      setPrediction(undefined);
+      setForwardTarget({ runId: result.run_id });
+      setPendingForwardRun(result.run_id);
       setCurrentRunKind("source-training");
       setPage("monitor");
       stream.startStream(result.run_id);
-      applyPredictionResult(await runForward(result.run_id, result.checkpoint.step));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Training source failed.");
     } finally {
@@ -247,6 +249,24 @@ export default function App() {
     const lastNode = result.graph.nodes[result.graph.nodes.length - 1];
     stream.applyPrediction(result.layers, lastNode?.id);
   };
+
+  useEffect(() => {
+    if (stream.status !== "complete" || !pendingForwardRun) return;
+    let cancelled = false;
+    runForward(pendingForwardRun)
+      .then((result) => {
+        if (!cancelled) applyPredictionResult(result);
+      })
+      .catch((error) => {
+        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "Forward pass failed.");
+      })
+      .finally(() => {
+        if (!cancelled) setPendingForwardRun(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingForwardRun, stream.status]);
 
   const handleStartStream = () => {
     setErrorMessage(undefined);
@@ -283,20 +303,16 @@ export default function App() {
     setDetailRunId(undefined);
     setImportCandidate(undefined);
     setForwardTarget(undefined);
+    setPendingForwardRun(undefined);
     setSourceRecipe(undefined);
     setCurrentRunKind(undefined);
     loadDemoGraph();
   };
 
   const warnings = inspection?.warnings ?? [];
-  const selectedMetadata = useMemo(
-    () => (selectedNode && Object.keys(selectedNode.metadata).length ? JSON.stringify(selectedNode.metadata, null, 2) : ""),
-    [selectedNode]
-  );
-
   const predictionSummary = prediction
-    ? `label ${prediction.label} · predicted ${prediction.prediction} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained weights" : "random weights"}`
-    : "run forward to inspect probabilities";
+    ? `${prediction.prediction} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
+    : "";
 
   return (
     <main className="app-shell" ref={shellRef}>
@@ -369,7 +385,7 @@ export default function App() {
         <div className="metric-panel">
           <div className="panel-heading">
             <h2>Training Telemetry</h2>
-            <span>{stream.runId ? `run ${stream.runId}` : "loss, accuracy, step time"}</span>
+            <span>{stream.runId ? stream.runId : ""}</span>
           </div>
           <MetricChart points={stream.metrics} status={stream.status} theme={theme} runKind={currentRunKind} />
         </div>
@@ -383,20 +399,15 @@ export default function App() {
         <div className="event-panel">
           <div className="panel-heading">
             <h2>Runtime Events</h2>
-            <span>{stream.events.length} recent events</span>
+            <span>{stream.events.length}</span>
           </div>
           <div className="event-list">
             {errorMessage && <div className="event warning">{errorMessage}</div>}
             {warnings.map((warning) => (
               <div className="event warning" key={warning}>{warning}</div>
             ))}
-            {selectedMetadata && (
-              <div className="event metadata">
-                <pre>{selectedMetadata}</pre>
-              </div>
-            )}
             {stream.events.length === 0 && !errorMessage && warnings.length === 0 && (
-              <p className="empty-hint">Start a demo stream or watch a live training run to see events here.</p>
+              <p className="empty-hint">No events</p>
             )}
             {stream.events.map((event) => (
               <div className={`event ${event.type}`} key={event.event_id}>

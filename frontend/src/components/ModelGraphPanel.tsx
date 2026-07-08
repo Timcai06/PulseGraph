@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState } from "react";
-import { Handle, Position, ReactFlow, Background, Controls, MiniMap, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, ReactFlow, Background, Controls, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -30,18 +30,12 @@ function layoutPositions(graph: ModelGraph): Record<string, { x: number; y: numb
   return positions;
 }
 
-function shapeText(shape?: number[] | null) {
-  return shape && shape.length ? shape.join(" x ") : "unknown";
-}
-
 const PulseNode = memo(({ data, selected }: NodeProps<Node<GraphNode>>) => {
   return (
     <div className={`model-node ${selected ? "selected" : ""}`} data-layer-id={data.id}>
       <Handle type="target" position={Position.Left} />
       <div className="node-kind">{data.kind}</div>
-      <div className="node-label">{data.label}</div>
-      <div className="node-meta">out {shapeText(data.output_shape)}</div>
-      <div className="node-meta">{data.param_count.toLocaleString()} params</div>
+      <div className="node-label">{data.id}</div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -112,7 +106,6 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
       <div className="panel-heading">
         <div>
           <h2>{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</h2>
-          <span>{viewMode === "ops" ? "Netron-like structure with training pulses" : "Layered neurons with activation intensity"}</span>
         </div>
         <div className="view-tabs" aria-label="graph view">
           <button className={viewMode === "ops" ? "active" : ""} onClick={() => setViewMode("ops")} type="button">Ops</button>
@@ -125,11 +118,12 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
+          fitViewOptions={{ padding: 0.24 }}
           minZoom={0.35}
+          nodesDraggable={false}
           onNodeClick={(_, node) => onSelect(node.data)}
         >
           <Background color="#263244" />
-          <MiniMap pannable zoomable />
           <Controls />
         </ReactFlow>
       ) : (

@@ -7,7 +7,7 @@
 
 .panel-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 1px solid rgba(100, 116, 139, 0.18);
@@ -46,13 +46,17 @@
 
 .model-node {
   width: 178px;
-  border: 1px solid rgba(59, 130, 246, 0.42);
-  background: linear-gradient(180deg, var(--surface-raised), rgba(15, 23, 42, 0.94));
+  min-height: 72px;
+  border: 1px solid rgba(34, 211, 238, 0.72);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(3, 35, 54, 0.98));
   border-radius: var(--radius-md);
-  padding: 10px;
+  padding: 12px;
   color: #e0f2fe;
   will-change: transform;
   transition: border-color var(--transition-fast);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .model-node.selected {
@@ -61,26 +65,20 @@
 }
 
 .node-kind {
-  color: var(--cyan);
-  font-size: 11px;
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
 }
 
 .node-label {
-  font-weight: 800;
-  margin-top: 4px;
-  font-size: 14px;
-}
-
-.node-meta {
-  color: var(--text-muted);
-  font-size: 11px;
-  margin-top: 5px;
+  margin-top: 8px;
+  color: var(--cyan);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
 .pulse-edge {
   stroke: var(--cyan);
 }
-

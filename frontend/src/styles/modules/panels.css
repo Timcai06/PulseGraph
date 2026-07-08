@@ -1,6 +1,6 @@
 .bottom-dock {
   display: grid;
-  grid-template-columns: minmax(420px, 1.25fr) minmax(340px, 0.85fr) minmax(300px, 0.62fr);
+  grid-template-columns: minmax(420px, 1.12fr) minmax(390px, 0.92fr) minmax(280px, 0.56fr);
   gap: 10px;
   min-height: 0;
 }
@@ -61,23 +61,25 @@
 
 .inference-body {
   height: 100%;
-  min-height: 218px;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: 166px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
+  overflow: hidden;
 }
 
 .inference-body .prob-chart {
-  height: 94px;
+  height: 126px;
 }
 
 .inference-result {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
+  overflow: hidden;
 }
 
 .recognition-image {
@@ -174,8 +176,8 @@
 
 .digit-grid {
   position: relative;
-  width: 146px;
-  height: 146px;
+  width: 154px;
+  height: 154px;
   display: grid;
   grid-template-columns: repeat(28, 1fr);
   grid-template-rows: repeat(28, 1fr);
@@ -215,15 +217,6 @@
   --pixel: 0;
   border-radius: 1px;
   background: rgba(236, 254, 255, calc(0.08 + var(--pixel) * 0.9));
-}
-
-.digit-meta {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 .event-list {

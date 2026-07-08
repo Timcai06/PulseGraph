@@ -151,7 +151,8 @@ def test_train_source_file_creates_training_metrics_and_trained_forward() -> Non
     run_id = trained["run_id"]
     assert trained["run_kind"] == "source-training"
     assert trained["inference_only"] is False
-    assert trained["checkpoint"]["fingerprint"]
+    assert trained["status"] == "started"
+    assert trained["checkpoint"] is None
 
     detail = client.get(f"/api/runs/{run_id}/detail").json()
     assert detail["config"]["run_kind"] == "source-training"

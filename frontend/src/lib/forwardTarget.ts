@@ -13,5 +13,5 @@ export function resolveForwardTarget(target?: ForwardTarget): ForwardRequest {
 }
 
 export function describeForwardTarget(target?: ForwardTarget): string {
-  return target ? `Current run: ${target.runId}` : "No current run; demo forward will run.";
+  return target ? target.runId : "demo";
 }

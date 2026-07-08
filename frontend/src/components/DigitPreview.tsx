@@ -1,13 +1,10 @@
 type Props = {
   pixels?: number[];
-  label?: number;
-  prediction?: number;
 };
 
-export function DigitPreview({ pixels, label, prediction }: Props) {
+export function DigitPreview({ pixels }: Props) {
   const isDigitImage = pixels?.length === 28 * 28;
   const cells = isDigitImage ? pixels : Array(28 * 28).fill(0);
-  const sampleSize = pixels?.length ?? 0;
 
   return (
     <div className="digit-preview">
@@ -21,14 +18,9 @@ export function DigitPreview({ pixels, label, prediction }: Props) {
         ))}
         {!isDigitImage && (
           <span className="generic-sample">
-            tensor
-            <strong>{sampleSize}</strong>
+            -
           </span>
         )}
-      </div>
-      <div className="digit-meta">
-        <span>label {label ?? "-"}</span>
-        <span>pred {prediction ?? "-"}</span>
       </div>
     </div>
   );
