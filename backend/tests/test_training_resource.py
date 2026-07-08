@@ -148,6 +148,22 @@ def test_train_resource_endpoint_creates_run_and_forward_replay() -> None:
     assert len(forward["probabilities"]) == 3
 
 
+def test_train_resource_endpoint_respects_telemetry_stride() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "6", "telemetry_stride": "3"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    detail = client.get(f"/api/runs/{run_id}/detail").json()
+
+    assert [metric["step"] for metric in detail["metrics"]] == [3, 6]
+    assert detail["config"]["steps"] == 6
+    assert detail["config"]["telemetry_stride"] == 3
+
+
 def test_train_resource_endpoint_accepts_plain_nn_module_source() -> None:
     response = client.post(
         "/api/runs/train-resource",

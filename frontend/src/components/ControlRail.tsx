@@ -11,6 +11,8 @@ type Props = {
   trainAvailable: boolean;
   trainingSteps: number;
   onTrainingStepsChange: (steps: number) => void;
+  telemetryStride: number;
+  onTelemetryStrideChange: (stride: number) => void;
   forwardTargetLabel: string;
   currentRunKind?: string;
   metricCount: number;
@@ -39,6 +41,8 @@ export function ControlRail({
   trainAvailable,
   trainingSteps,
   onTrainingStepsChange,
+  telemetryStride,
+  onTelemetryStrideChange,
   forwardTargetLabel,
   currentRunKind,
   metricCount,
@@ -77,6 +81,17 @@ export function ControlRail({
             step={10}
             value={trainingSteps}
             onChange={(event) => onTrainingStepsChange(Number(event.target.value))}
+          />
+        </label>
+        <label className="number-field">
+          <span>Telemetry Stride</span>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            step={1}
+            value={telemetryStride}
+            onChange={(event) => onTelemetryStrideChange(Number(event.target.value))}
           />
         </label>
         <button onClick={onRunTraining} disabled={!trainAvailable || busy === "train"} type="button">

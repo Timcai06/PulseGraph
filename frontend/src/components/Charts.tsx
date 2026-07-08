@@ -67,12 +67,21 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind }
           borderColor: palette.grid,
           textStyle: { color: palette.text }
         },
-        legend: { textStyle: { color: palette.text } },
-        grid: { left: 42, right: 18, top: 36, bottom: 36 },
+        legend: {
+          top: 2,
+          left: 8,
+          itemWidth: 10,
+          itemHeight: 6,
+          textStyle: { color: palette.text, fontSize: 11 }
+        },
+        grid: { left: 42, right: 24, top: 52, bottom: 44, containLabel: true },
         xAxis: {
           type: "category",
           data: points.map((point) => point.step),
-          axisLabel: { color: palette.text },
+          name: "step",
+          nameLocation: "middle",
+          nameGap: 28,
+          axisLabel: { color: palette.text, hideOverlap: true, margin: 10 },
           axisLine: { lineStyle: { color: palette.grid } }
         },
         yAxis: [

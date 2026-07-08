@@ -32,6 +32,7 @@ const HEALTH_POLL_MS = 8000;
 const RUNS_POLL_MS = 5000;
 const THEME_KEY = "pulsegraph-theme";
 const DEFAULT_TRAINING_STEPS = 100;
+const DEFAULT_TELEMETRY_STRIDE = 5;
 
 const sampleSourceLabel: Record<PredictionResponse["sample_source"], string> = {
   mnist: "Real dataset",
@@ -68,6 +69,7 @@ export default function App() {
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
   const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
+  const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
   const shellRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
   const stream = useRunStream();
@@ -188,7 +190,8 @@ export default function App() {
     setErrorMessage(undefined);
     try {
       const steps = Math.max(1, Math.min(500, Math.trunc(trainingSteps || DEFAULT_TRAINING_STEPS)));
-      const result = await trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile, steps);
+      const stride = Math.max(1, Math.min(steps, Math.trunc(telemetryStride || DEFAULT_TELEMETRY_STRIDE)));
+      const result = await trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile, steps, stride);
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
       setPrediction(undefined);
@@ -306,6 +309,8 @@ export default function App() {
             trainAvailable={Boolean(sourceRecipe)}
             trainingSteps={trainingSteps}
             onTrainingStepsChange={(steps) => setTrainingSteps(Math.max(1, Math.min(500, Math.trunc(steps || 1))))}
+            telemetryStride={telemetryStride}
+            onTelemetryStrideChange={(stride) => setTelemetryStride(Math.max(1, Math.min(500, Math.trunc(stride || 1))))}
             forwardTargetLabel={forwardTarget ? describeForwardTarget(forwardTarget) : "none"}
             currentRunKind={currentRunKind}
             metricCount={stream.metrics.length}

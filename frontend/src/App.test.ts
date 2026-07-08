@@ -4,6 +4,7 @@ import controlRailSource from "./components/ControlRail.tsx?raw";
 import digitPreviewSource from "./components/DigitPreview.tsx?raw";
 import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
+import chartsSource from "./components/Charts.tsx?raw";
 
 describe("App workspace layout", () => {
   it("does not render the right-side layer inspector panel", () => {
@@ -56,5 +57,19 @@ describe("App workspace layout", () => {
     expect(appSource).toContain("trainingSteps");
     expect(controlRailSource).toContain("Training Steps");
     expect(controlRailSource).toContain("onTrainingStepsChange");
+  });
+
+  it("makes telemetry stride configurable separately from training steps", () => {
+    expect(appSource).toContain("telemetryStride");
+    expect(controlRailSource).toContain("Telemetry Stride");
+    expect(controlRailSource).toContain("onTelemetryStrideChange");
+    expect(appSource).toContain("trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile, steps, stride)");
+  });
+
+  it("keeps telemetry legend and x-axis labels from overlapping", () => {
+    expect(chartsSource).toContain("containLabel: true");
+    expect(chartsSource).toContain("hideOverlap: true");
+    expect(chartsSource).toContain("legend:");
+    expect(chartsSource).toContain("top: 2");
   });
 });

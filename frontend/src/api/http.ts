@@ -143,10 +143,16 @@ export async function trainSourceRun(
   return response.json();
 }
 
-export async function trainResourceRun(files: NamedSourceFile[], entryFile: string, steps = 100): Promise<SourceImportResult> {
+export async function trainResourceRun(
+  files: NamedSourceFile[],
+  entryFile: string,
+  steps = 100,
+  telemetryStride = 5
+): Promise<SourceImportResult> {
   const form = sourceForm(files);
   form.append("entry_file", entryFile);
   form.append("steps", String(steps));
+  form.append("telemetry_stride", String(telemetryStride));
   const response = await fetch("/api/runs/train-resource", { method: "POST", body: form });
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);

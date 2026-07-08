@@ -466,6 +466,7 @@ def _run_resource_training_job(
     source_root: Path,
     graph,
     steps: int,
+    telemetry_stride: int,
 ) -> None:
     try:
         resource = load_training_resource(source_path, source_root=source_root)
@@ -504,21 +505,23 @@ def _run_resource_training_job(
         optimizer.step()
         step_time_ms = (time.perf_counter() - step_start) * 1000
         accuracy = float((logits.argmax(dim=1) == labels).float().mean().item())
-        metrics.append(
-            {
-                "step": step,
-                "loss": round(float(loss.item()), 4),
-                "accuracy": round(accuracy, 4),
-                "learning_rate": learning_rate,
-                "step_time_ms": round(step_time_ms, 2),
-                "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
-                "elapsed_sec": round(time.perf_counter() - start, 2),
-            }
-        )
-        model.eval()
-        snapshot = forward_with_model(model, images[:1])
-        layers_by_step.append((step, snapshot["layers"]))
-        model.train()
+        should_record = step % telemetry_stride == 0 or step == steps
+        if should_record:
+            metrics.append(
+                {
+                    "step": step,
+                    "loss": round(float(loss.item()), 4),
+                    "accuracy": round(accuracy, 4),
+                    "learning_rate": learning_rate,
+                    "step_time_ms": round(step_time_ms, 2),
+                    "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
+                    "elapsed_sec": round(time.perf_counter() - start, 2),
+                }
+            )
+            model.eval()
+            snapshot = forward_with_model(model, images[:1])
+            layers_by_step.append((step, snapshot["layers"]))
+            model.train()
 
     run_store.save_config(
         run_id,
@@ -530,6 +533,7 @@ def _run_resource_training_job(
             "training_status": "completed",
             "training_recipe": "resource-contract",
             "steps": steps,
+            "telemetry_stride": telemetry_stride,
             "batch_size": batch_size,
             "lr": learning_rate,
             "entry_file": run_store.load_entry_meta(run_id)["entry_file"] if run_store.load_entry_meta(run_id) else None,
@@ -570,6 +574,7 @@ async def train_run_from_resource(
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
     steps: int = Form(100),
+    telemetry_stride: int = Form(1),
 ):
     collected = await _collect_source_files(files)
     if not collected:
@@ -600,6 +605,7 @@ async def train_run_from_resource(
         )
 
     steps = max(1, min(int(steps), 500))
+    telemetry_stride = max(1, min(int(telemetry_stride), steps))
     run_store.save_config(
         run_id,
         {
@@ -610,6 +616,7 @@ async def train_run_from_resource(
             "training_status": "running",
             "training_recipe": "resource-contract",
             "steps": steps,
+            "telemetry_stride": telemetry_stride,
             "batch_size": resource.batch_size,
             "lr": resource.learning_rate,
             "entry_file": normalized_entry,
@@ -623,7 +630,7 @@ async def train_run_from_resource(
     )
     run_store.save_graph(run_id, graph.model_dump())
     run_registry.publish(run_id, [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})])
-    background_tasks.add_task(_run_resource_training_job, run_id, source_path, source_root, graph, steps)
+    background_tasks.add_task(_run_resource_training_job, run_id, source_path, source_root, graph, steps, telemetry_stride)
     return {
         "run_id": run_id,
         "run_kind": "resource-training",
