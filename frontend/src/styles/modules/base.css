@@ -33,9 +33,24 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 8px;
+  --radius-xl: 18px;
 
   --shadow-panel: 0 14px 34px rgba(0, 0, 0, 0.22);
   --transition-fast: 140ms ease;
+
+  /* Floating glass layers over the graph stage */
+  --glass-bg: rgba(10, 16, 26, 0.58);
+  --glass-bg-strong: rgba(9, 14, 23, 0.74);
+  --glass-border: rgba(148, 163, 184, 0.16);
+  --glass-blur: saturate(1.4) blur(18px);
+  --scrim: rgba(5, 9, 16, 0.82);
+  --stage-dot: rgba(148, 163, 184, 0.16);
+
+  /* Stage geometry shared by layout.css and App.tsx (dock tween) */
+  --topbar-h: 58px;
+  --rail-w: 280px;
+  --dock-h: 320px;
+  --dock-handle-h: 42px;
 
   font-family: var(--font-sans);
   background: var(--bg);
@@ -49,10 +64,11 @@
 body {
   margin: 0;
   background:
-    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    radial-gradient(1100px 640px at 52% 36%, rgba(37, 99, 235, 0.16), transparent 62%),
+    radial-gradient(820px 520px at 12% 88%, rgba(45, 212, 191, 0.07), transparent 60%),
+    radial-gradient(900px 560px at 88% 10%, rgba(139, 92, 246, 0.09), transparent 60%),
     var(--bg);
-  background-size: 24px 24px;
+  background-attachment: fixed;
 }
 
 code,

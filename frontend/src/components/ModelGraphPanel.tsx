@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState } from "react";
-import { Handle, Position, ReactFlow, Background, Controls, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, ReactFlow, Controls, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -102,11 +102,9 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
   };
 
   return (
-    <section className="graph-panel" ref={containerRef}>
-      <div className="panel-heading">
-        <div>
-          <h2>{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</h2>
-        </div>
+    <section className="graph-stage" ref={containerRef}>
+      <div className="stage-toolbar">
+        <span className="stage-title">{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</span>
         <div className="view-tabs" aria-label="graph view">
           <button className={viewMode === "ops" ? "active" : ""} onClick={() => setViewMode("ops")} type="button">Ops</button>
           <button className={viewMode === "neurons" ? "active" : ""} onClick={() => setViewMode("neurons")} type="button">Neurons</button>
@@ -123,7 +121,6 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
           nodesDraggable={false}
           onNodeClick={(_, node) => onSelect(node.data)}
         >
-          <Background color="#263244" />
           <Controls />
         </ReactFlow>
       ) : (

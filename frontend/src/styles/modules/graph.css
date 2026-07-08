@@ -1,39 +1,55 @@
-.graph-panel {
-  min-height: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto 1fr;
+/* The graph is not a panel: it owns the region right of the rail, no chrome. */
+.graph-stage {
+  position: absolute;
+  top: var(--topbar-h);
+  right: 16px;
+  bottom: calc(var(--dock-handle-h) + 20px);
+  left: calc(var(--rail-w) + 30px);
 }
 
-.panel-heading {
+.graph-stage > .react-flow {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+/* Floating pill toolbar inside the stage */
+.stage-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(100, 116, 139, 0.18);
+  gap: 12px;
+  padding: 5px 6px 5px 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
 }
 
-.panel-heading > div:first-child {
-  display: grid;
-  gap: 3px;
+.stage-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .view-tabs {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  min-width: 178px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 4px;
-  background: rgba(2, 6, 23, 0.36);
+  gap: 2px;
 }
 
 .view-tabs button {
-  min-height: 30px;
-  padding: 6px 10px;
+  width: auto;
+  min-height: 28px;
+  padding: 5px 14px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: transparent;
   color: var(--text-muted);
 }
@@ -81,4 +97,43 @@
 
 .pulse-edge {
   stroke: var(--cyan);
+}
+
+/* React Flow chrome, matched to the glass layers */
+.react-flow__controls {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: none;
+}
+
+.react-flow__controls button {
+  width: auto;
+  min-height: 0;
+  border: 0;
+  border-bottom: 1px solid var(--glass-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-soft);
+}
+
+.react-flow__controls button:last-child {
+  border-bottom: 0;
+}
+
+.react-flow__controls button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: var(--glass-border);
+}
+
+.react-flow__controls button path {
+  fill: currentColor;
+}
+
+.react-flow__attribution {
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.6;
 }

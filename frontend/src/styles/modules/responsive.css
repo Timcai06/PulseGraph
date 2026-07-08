@@ -1,24 +1,18 @@
 @media (max-width: 1180px) {
-  .app-shell {
-    grid-template-rows: auto auto minmax(620px, 1fr) auto;
+  :root {
+    --rail-w: 236px;
   }
 
-  .top-bar {
-    align-items: flex-start;
-    gap: 12px;
-    flex-direction: column;
+  .status-strip span {
+    padding: 5px 9px;
   }
 
-  .status-strip {
-    flex-wrap: wrap;
-  }
-
-  .workspace {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-
-  .bottom-dock {
+  .dock-panels {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .event-panel {
+    display: none;
   }
 
   .history-row {
@@ -28,22 +22,98 @@
   .history-row > :last-child {
     grid-column: 1 / -1;
   }
-
-  .event-panel {
-    grid-column: 1 / -1;
-    min-height: 260px;
-  }
 }
 
-@media (max-width: 760px) {
+/* Small screens fall back to a stacked document flow: no floating layers,
+   the dock is always open. `!important` beats the GSAP inline transforms. */
+@media (max-width: 860px) {
   .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
     padding: 10px;
-    grid-template-rows: auto auto auto auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
-  .workspace,
+  .stage {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stage::before {
+    display: none;
+  }
+
+  .top-bar,
+  .page-tabs,
+  .control-rail,
+  .graph-stage,
+  .bottom-dock,
+  .history-page {
+    position: static;
+    transform: none !important;
+    width: auto;
+    height: auto;
+  }
+
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    pointer-events: auto;
+  }
+
+  .status-strip {
+    flex-wrap: wrap;
+  }
+
+  .page-tabs {
+    order: -1;
+    margin: 0 auto;
+  }
+
+  .graph-stage {
+    min-height: 480px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+  }
+
+  .stage-toolbar {
+    right: 10px;
+  }
+
   .bottom-dock {
+    grid-template-rows: auto;
+    border-bottom: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    box-shadow: none;
+  }
+
+  .dock-handle {
+    display: none;
+  }
+
+  .dock-panels {
     grid-template-columns: 1fr;
+  }
+
+  .dock-panels > div + div {
+    border-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  .event-panel {
+    display: grid;
+    min-height: 220px;
   }
 
   .history-row {
@@ -56,20 +126,6 @@
 
   .history-head {
     display: none;
-  }
-
-  .graph-panel {
-    min-height: 560px;
-  }
-
-  .panel-heading {
-    align-items: flex-start;
-    gap: 4px;
-    flex-direction: column;
-  }
-
-  .view-tabs {
-    width: 100%;
   }
 
   .neural-layers {

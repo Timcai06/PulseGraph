@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type { GraphNode, ModelGraph, NamedSourceFile, PredictionResponse, RunSummary } from "./api/client";
@@ -33,6 +34,8 @@ const RUNS_POLL_MS = 5000;
 const THEME_KEY = "pulsegraph-theme";
 const DEFAULT_TRAINING_STEPS = 100;
 const DEFAULT_TELEMETRY_STRIDE = 5;
+// must match --dock-handle-h in base.css
+const DOCK_HANDLE_PX = 42;
 
 const sampleSourceLabel: Record<PredictionResponse["sample_source"], string> = {
   mnist: "Real dataset",
@@ -70,7 +73,9 @@ export default function App() {
   const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
+  const [dockOpen, setDockOpen] = useState(false);
   const shellRef = useRef<HTMLElement | null>(null);
+  const dockRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
   const stream = useRunStream();
 
@@ -82,7 +87,7 @@ export default function App() {
   useGSAP(
     () => {
       if (reducedMotion) return;
-      gsap.from(".top-bar, .workspace > *, .bottom-dock > *", {
+      gsap.from(".top-bar, .page-tabs, .control-rail, .stage-toolbar", {
         opacity: 0,
         y: 14,
         duration: 0.5,
@@ -90,9 +95,30 @@ export default function App() {
         ease: "power2.out",
         clearProps: "all"
       });
+      // the dock keeps its own transform (drawer position), so fade opacity only
+      gsap.from(".bottom-dock", { opacity: 0, duration: 0.5, delay: 0.25, clearProps: "opacity" });
     },
     { scope: shellRef }
   );
+
+  // drawer slide; the closed position matches the CSS default transform
+  useGSAP(
+    () => {
+      const dock = dockRef.current;
+      if (!dock) return;
+      const y = dockOpen ? 0 : dock.offsetHeight - DOCK_HANDLE_PX;
+      if (reducedMotion) {
+        gsap.set(dock, { y });
+      } else {
+        gsap.to(dock, { y, duration: 0.55, ease: "power3.inOut" });
+      }
+    },
+    { dependencies: [dockOpen, page, reducedMotion], scope: shellRef }
+  );
+
+  useEffect(() => {
+    if (stream.status === "streaming") setDockOpen(true);
+  }, [stream.status]);
 
   const loadDemoGraph = useCallback(() => {
     getDemoModel()
@@ -210,6 +236,7 @@ export default function App() {
 
   const applyPredictionResult = (result: PredictionResponse) => {
     setPrediction(result);
+    setDockOpen(true);
     setGraph(result.graph);
     setSelectedNode(firstDisplayNode(result.graph));
     const lastNode = result.graph.nodes[result.graph.nodes.length - 1];
@@ -295,7 +322,14 @@ export default function App() {
       </nav>
 
       {page === "monitor" ? (
-        <div className="workspace">
+        <div className="stage">
+          <ModelGraphPanel
+            graph={graph}
+            selectedNodeId={selectedNode?.id}
+            pulsedNodeId={stream.pulsedNodeId}
+            probabilities={prediction?.probabilities}
+            onSelect={setSelectedNode}
+          />
           <ControlRail
             onResourceUpload={handleResourceUpload}
             onRunTraining={handleRunTraining}
@@ -321,13 +355,52 @@ export default function App() {
             busy={busy}
             errorMessage={errorMessage}
           />
-          <ModelGraphPanel
-            graph={graph}
-            selectedNodeId={selectedNode?.id}
-            pulsedNodeId={stream.pulsedNodeId}
-            probabilities={prediction?.probabilities}
-            onSelect={setSelectedNode}
-          />
+          <section className="bottom-dock" ref={dockRef}>
+            <button
+              className="dock-handle"
+              type="button"
+              onClick={() => setDockOpen((open) => !open)}
+              aria-expanded={dockOpen}
+            >
+              <i className={`status-dot ${stream.status === "streaming" ? "streaming" : "idle"}`} />
+              Telemetry
+              <span className="dock-run">{stream.runId ?? ""}</span>
+              {dockOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </button>
+            <div className="dock-panels">
+              <div className="metric-panel">
+                <div className="panel-heading">
+                  <h2>Training Telemetry</h2>
+                  <span>{stream.runId ? stream.runId : ""}</span>
+                </div>
+                <MetricChart points={stream.metrics} status={stream.status} theme={theme} runKind={currentRunKind} />
+              </div>
+              <div className="prediction-panel">
+                <div className="panel-heading">
+                  <h2>Recognition Result</h2>
+                  <span>{predictionSummary}</span>
+                </div>
+                <InferenceProbe prediction={prediction} theme={theme} />
+              </div>
+              <div className="event-panel">
+                <div className="panel-heading">
+                  <h2>Runtime Events</h2>
+                  <span>{stream.events.length}</span>
+                </div>
+                <div className="event-list">
+                  {errorMessage && <div className="event warning">{errorMessage}</div>}
+                  {stream.events.length === 0 && !errorMessage && (
+                    <p className="empty-hint">No events</p>
+                  )}
+                  {stream.events.map((event) => (
+                    <div className={`event ${event.type}`} key={event.event_id}>
+                      <strong>{event.type}</strong> step {event.step} {event.layer ? `· ${event.layer}` : ""}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       ) : (
         <HistoryPage
@@ -341,40 +414,6 @@ export default function App() {
           onDeleteRun={handleDeleteRun}
         />
       )}
-
-      <section className={`bottom-dock ${page === "history" ? "history-dock" : ""}`}>
-        <div className="metric-panel">
-          <div className="panel-heading">
-            <h2>Training Telemetry</h2>
-            <span>{stream.runId ? stream.runId : ""}</span>
-          </div>
-          <MetricChart points={stream.metrics} status={stream.status} theme={theme} runKind={currentRunKind} />
-        </div>
-        <div className="prediction-panel">
-          <div className="panel-heading">
-            <h2>Recognition Result</h2>
-            <span>{predictionSummary}</span>
-          </div>
-          <InferenceProbe prediction={prediction} theme={theme} />
-        </div>
-        <div className="event-panel">
-          <div className="panel-heading">
-            <h2>Runtime Events</h2>
-            <span>{stream.events.length}</span>
-          </div>
-          <div className="event-list">
-            {errorMessage && <div className="event warning">{errorMessage}</div>}
-            {stream.events.length === 0 && !errorMessage && (
-              <p className="empty-hint">No events</p>
-            )}
-            {stream.events.map((event) => (
-              <div className={`event ${event.type}`} key={event.event_id}>
-                <strong>{event.type}</strong> step {event.step} {event.layer ? `· ${event.layer}` : ""}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {detailRunId && (
         <RunDetailPanel
