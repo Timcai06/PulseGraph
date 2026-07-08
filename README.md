@@ -97,8 +97,10 @@ Start backend:
 
 ```bash
 cd /Users/tim/Documents/ai_infra/projects/pulsegraph
-/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8010
+make backend
 ```
+
+For auto-reload during development, use `make backend-reload`.
 
 Install frontend dependencies:
 
@@ -110,9 +112,11 @@ npm install
 Start frontend:
 
 ```bash
-cd /Users/tim/Documents/ai_infra/projects/pulsegraph/frontend
-npm run dev
+cd /Users/tim/Documents/ai_infra/projects/pulsegraph
+make frontend
 ```
+
+To start both backend and frontend from one terminal, use `make dev`.
 
 Open:
 
@@ -126,7 +130,7 @@ Backend tests:
 
 ```bash
 cd /Users/tim/Documents/ai_infra/projects/pulsegraph
-/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python -m pytest backend -q
+make test
 ```
 
 Frontend build:
