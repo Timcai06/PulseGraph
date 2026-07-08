@@ -1,88 +1,113 @@
 # PulseGraph
 
-PulseGraph is a local-first PyTorch model, training, and infrastructure visualization dashboard.
+PulseGraph is a local-first PyTorch training observability workbench.
 
-Meaning:
+It turns a runnable Python training resource into a reproducible experiment record: model graph, training metrics, runtime events, checkpoints, probe samples, inference replay, and a lightweight diagnosis report.
 
-- Pulse: live training signals such as activations, gradients, metrics, checkpoints, and runtime telemetry.
-- Graph: model structure, tensor flow, layer relationships, and execution traces.
+## Demo Video
 
-Product direction:
+The first thing to watch is the local training and inference workflow:
 
-- Netron-like `.pt` model inspection.
-- Training-process visualization for trusted runnable models.
-- Infra-oriented observability for step time, throughput, memory, checkpoints, and artifacts.
-- Plugin-based visual panels for MLP, CNN, Transformer, Autoencoder, and future LLM fine-tuning workflows.
+<video src="docs/assets/pulsegraph-demo.mp4" controls width="100%"></video>
 
-Core boundary:
+If GitHub does not render the embedded video, open it directly:
+[docs/assets/pulsegraph-demo.mp4](docs/assets/pulsegraph-demo.mp4)
 
-- Any `.pt`: safe parameter and checkpoint inspection first.
-- Trusted runnable `.pt`: forward execution, hooks, activations, predictions, and dynamic graph visualization.
-- Training runs: event-streamed metrics, layer snapshots, infra telemetry, and checkpoint timeline.
+## What PulseGraph Is
 
-Initial architecture:
+PulseGraph is not a generic cloud training platform. It is a controlled local platform for learning and validating PyTorch training workflows.
+
+The core idea is simple:
+
+1. Upload or select a trusted Python training resource.
+2. Run training locally through a consistent backend contract.
+3. Stream and persist training telemetry.
+4. Visualize model structure, runtime events, metrics, samples, and inference output.
+5. Reopen past runs from history for comparison, replay, and reporting.
+
+This makes the project useful for PyTorch learning, model debugging, experiment explanation, and AI infrastructure practice.
+
+## Main Workflow
 
 ```text
-frontend/    React, React Flow, ECharts, GSAP (hand-rolled CSS design tokens)
-backend/     FastAPI, PyTorch, event stream, model inspector, runtime hooks
-client/      zero-dependency telemetry emitter for training scripts
-docs/        design specs and architecture notes
+Python Training Resource
+        |
+        v
+FastAPI controlled training runtime
+        |
+        v
+Run archive: source + config + graph + metrics + events + checkpoints + samples
+        |
+        v
+React dashboard: Operator Graph + Training Telemetry + Runtime Events + Recognition Result
+        |
+        v
+History, replay, inference, and report
 ```
 
-## Current MVP
+The dashboard currently focuses on one main user path:
 
-The current implementation includes:
+- import `.py` or `.zip` training resource
+- configure training steps and telemetry stride
+- run training
+- watch live graph and telemetry
+- run inference repeatedly from the trained checkpoint
+- inspect historical runs
+- delete local run records when they are no longer needed
 
-- FastAPI backend.
-- Safe `.pt` upload inspection with `torch.load(..., weights_only=True)`.
-- SHA-256 artifact identity for uploaded model files.
-- Inferred graph generation from state dict tensor names and shapes.
-- Trusted demo MLP runtime backed by real data: it loads the trained checkpoint from
-  `model_repo/platform_validation/mnist_digit_recognition/outputs/mnist_mlp.pt` and real MNIST test digits
-  (`data/mnist/MNIST/raw`), falling back to random weights and synthetic digits when absent.
-  Override paths with `PULSEGRAPH_MODEL_PATH` and `PULSEGRAPH_MNIST_DIR`.
-- Live run ingestion: training scripts POST batched events to `/api/runs/{run_id}/events`,
-  the dashboard lists runs from `/api/runs` and follows them over SSE at `/api/runs/{run_id}/stream`.
-- `client/pulsegraph_client.py`: a stdlib-only emitter (`PulseGraphRun`) that batches events on a
-  background thread; `model_repo/platform_validation/mnist_digit_recognition/02_train_mlp.py` uses it to stream real
-  training metrics, layer snapshots, infra telemetry, and checkpoint events.
-- SSE demo training stream with metric, layer, infra, checkpoint, animation, and completion events.
-- React dashboard with React Flow model graph, ECharts metrics/probabilities, GSAP node pulse
-  animation, live-run picker, and empty/loading/error states.
+## Current Capabilities
 
-## Training Provenance (record everything, replay anything)
+- **Training Resource workflow**: accepts trusted Python source that defines a training resource contract, and can also adapt ordinary `nn.Module` MNIST-like model source.
+- **Real training loop**: runs local PyTorch optimization on CPU and records loss, accuracy, step time, throughput, layer snapshots, and checkpoint metadata.
+- **Telemetry stride**: separates training granularity from visualization granularity. For example, train 100 steps but record chart points every 5 steps.
+- **Operator Graph**: traces model structure with `torch.fx` when possible, with tensor/state-dict fallback when tracing is unavailable.
+- **Recognition Result**: shows inference output from real dataset samples, resource-provided samples, or synthetic probes without pretending all outputs are real recognition.
+- **Runtime Events**: streams graph, metric, infra, layer snapshot, checkpoint, and completion events through SSE.
+- **History**: persists runs locally, reopens recorded runs, and supports deleting local history records.
+- **Reports**: builds a basic run report with metrics, checkpoint timeline, sample provenance, and rule-based diagnosis signals.
 
-PulseGraph records the full context of a training run so any resulting `.pt` file can be
-traced back and replayed later:
+## Repository Layout
 
-- `register_source` / `register_config` / `register_graph`: model source, hyperparameters,
-  and the exact `torch.fx` compute graph are captured at training time.
-- Probe samples (a small input batch) are stored with the run so replay works for any data domain.
-- Per-epoch checkpoints are uploaded to `backend/runs/{run_id}/checkpoints/` with a
-  **canonical weights fingerprint** (name + shape + dtype + raw bytes), independent of
-  serialization format.
-- Uploading any `.pt`/`.safetensors` matches by fingerprint and opens the run's full archive.
-- `GET /api/runs/{id}/forward` rebuilds the model from recorded source + checkpoint and runs
-  inference with per-layer activation capture. Only source recorded into the local runs/
-  store is ever executed.
-- `GET /api/runs/{id}/report` produces a diagnosis report: overfit gap, loss plateau,
-  layer health (dead neurons, gradient anomalies), per-checkpoint probe accuracy,
-  confusion matrix with misclassified samples, and rule-based insights.
-
-## Stream a Real Training Run
-
-With the backend running, train via the persistent training layer:
-
-```bash
-cd /Users/tim/Documents/ai_infra
-/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python training/train.py --model mlp --epochs 3
-/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python training/train.py --model cnn --epochs 2
+```text
+backend/      FastAPI API, PyTorch runtime, event registry, run store, replay, reports
+frontend/     React dashboard, graph view, telemetry charts, inference and history UI
+client/       lightweight Python telemetry client for external training scripts
+docs/         design notes, implementation plans, README media assets
+Makefile      repeatable local commands for backend, frontend, tests, and build
 ```
 
-The run appears under "Live Runs" in the dashboard: click it to follow metrics live, or open
-its detail view (ⓘ) for source, config, checkpoint timeline, replay, and the analysis report.
-Set `PULSEGRAPH_URL=""` to disable telemetry, or point it at a non-default backend URL.
-The client is an installable package: `pip install -e projects/pulsegraph/client`.
+The broader local learning workspace can keep model exercises and validation resources outside this Git repository, for example:
+
+```text
+/Users/tim/Documents/ai_infra/model_repo/
+```
+
+That separation keeps this repository focused on the platform layer while the model repository remains a place to learn PyTorch and validate training resources.
+
+## Training Resource Contract
+
+A training resource is a trusted Python file that exposes the pieces PulseGraph needs to run and visualize training:
+
+```python
+def metadata():
+    return {
+        "name": "mnist_mlp",
+        "classes": 10,
+        "input_shape": [1, 28, 28],
+        "data_source": "mnist",
+    }
+
+def build_model():
+    ...
+
+def train_batch(step: int, batch_size: int):
+    ...
+
+def inference_sample(index: int):
+    ...
+```
+
+For ordinary `nn.Module` files, PulseGraph can infer a simple MNIST-like resource when the model is compatible with `1 x 28 x 28` image inputs.
 
 ## Run Locally
 
@@ -90,7 +115,14 @@ Install backend dependencies:
 
 ```bash
 cd /Users/tim/Documents/ai_infra/projects/pulsegraph
-/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python -m pip install -r backend/requirements.txt
+make install-backend
+```
+
+Install frontend dependencies:
+
+```bash
+cd /Users/tim/Documents/ai_infra/projects/pulsegraph
+make install-frontend
 ```
 
 Start backend:
@@ -100,15 +132,6 @@ cd /Users/tim/Documents/ai_infra/projects/pulsegraph
 make backend
 ```
 
-For auto-reload during development, use `make backend-reload`.
-
-Install frontend dependencies:
-
-```bash
-cd /Users/tim/Documents/ai_infra/projects/pulsegraph/frontend
-npm install
-```
-
 Start frontend:
 
 ```bash
@@ -116,12 +139,29 @@ cd /Users/tim/Documents/ai_infra/projects/pulsegraph
 make frontend
 ```
 
-To start both backend and frontend from one terminal, use `make dev`.
+Or start both during development:
+
+```bash
+cd /Users/tim/Documents/ai_infra/projects/pulsegraph
+make dev
+```
 
 Open:
 
 ```text
 http://127.0.0.1:5173
+```
+
+## Useful Commands
+
+```bash
+make backend         # FastAPI on 127.0.0.1:8010
+make backend-reload  # FastAPI with reload
+make frontend        # Vite frontend
+make dev             # backend reload + frontend
+make test            # backend tests + frontend tests
+make build           # frontend production build
+make health          # backend health check
 ```
 
 ## Verify
@@ -130,17 +170,42 @@ Backend tests:
 
 ```bash
 cd /Users/tim/Documents/ai_infra/projects/pulsegraph
-make test
+/opt/homebrew/Caskroom/miniconda/base/condabin/mamba run -n ai_infra python -m pytest backend/tests
 ```
 
-Frontend build:
+Frontend tests and build:
 
 ```bash
 cd /Users/tim/Documents/ai_infra/projects/pulsegraph/frontend
+npm test -- --run
 npm run build
 ```
 
-## Design Docs
+## Replace The Demo Recording
 
-- `docs/superpowers/specs/2026-07-08-pulsegraph-design.md`
-- `docs/superpowers/plans/2026-07-08-pulsegraph-mvp.md`
+To replace the README video with a new `.mp4` recording:
+
+```bash
+cd /Users/tim/Documents/ai_infra/projects/pulsegraph
+cp ~/Desktop/<your-recording>.mp4 docs/assets/pulsegraph-demo.mp4
+```
+
+For macOS `.mov` recordings, convert it to a GitHub-friendly MP4:
+
+```bash
+cd /Users/tim/Documents/ai_infra/projects/pulsegraph
+ffmpeg -y -i ~/Desktop/<your-recording>.mov -c:v libx264 -preset veryfast -crf 24 -pix_fmt yuv420p -movflags +faststart docs/assets/pulsegraph-demo.mp4
+```
+
+Then commit the video together with the README:
+
+```bash
+git add README.md docs/assets/pulsegraph-demo.mp4
+git commit -m "Add PulseGraph demo video"
+git push origin main
+```
+
+## Design Notes
+
+- [PulseGraph product spec](docs/superpowers/specs/2026-07-08-pulsegraph-design.md)
+- [PulseGraph MVP plan](docs/superpowers/plans/2026-07-08-pulsegraph-mvp.md)
