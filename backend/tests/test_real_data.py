@@ -6,6 +6,7 @@ from app.runtime.demo_mlp import get_demo_model, run_demo_forward
 
 def _clear_caches() -> None:
     get_demo_model.cache_clear()
+    mnist_data.load_train_samples.cache_clear()
     mnist_data.load_test_samples.cache_clear()
     mnist_data.test_sample_indices_by_digit.cache_clear()
 

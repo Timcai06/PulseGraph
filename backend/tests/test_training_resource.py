@@ -1,12 +1,23 @@
 import textwrap
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.resources.contract import load_training_resource
+from app.runtime import mnist_data
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clear_mnist_caches():
+    mnist_data.load_train_samples.cache_clear()
+    mnist_data.load_test_samples.cache_clear()
+    yield
+    mnist_data.load_train_samples.cache_clear()
+    mnist_data.load_test_samples.cache_clear()
 
 
 RESOURCE_SOURCE = textwrap.dedent(
@@ -74,7 +85,10 @@ def test_training_resource_contract_loads_model_batches_and_samples(tmp_path) ->
     assert label == 2
 
 
-def test_plain_nn_module_source_is_adapted_as_training_resource(tmp_path) -> None:
+def test_plain_nn_module_source_is_adapted_as_training_resource(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("PULSEGRAPH_MNIST_DIR", str(tmp_path / "missing-mnist"))
+    mnist_data.load_train_samples.cache_clear()
+    mnist_data.load_test_samples.cache_clear()
     resource_path = tmp_path / "mlp.py"
     resource_path.write_text(ORDINARY_MODULE_SOURCE, encoding="utf-8")
 
@@ -82,6 +96,7 @@ def test_plain_nn_module_source_is_adapted_as_training_resource(tmp_path) -> Non
 
     assert resource.name == "DigitMLP"
     assert resource.metadata["source_mode"] == "nn-module-adapter"
+    assert resource.metadata["data_source"] == "synthetic"
     assert resource.input_shape == [1, 28, 28]
     assert resource.classes == 10
     images, labels = resource.train_batch(step=1, batch_size=4)
@@ -90,6 +105,24 @@ def test_plain_nn_module_source_is_adapted_as_training_resource(tmp_path) -> Non
     sample, label = resource.inference_sample(index=5)
     assert list(sample.shape) == [1, 1, 28, 28]
     assert label == 5
+
+
+def test_plain_nn_module_uses_real_mnist_when_available(tmp_path) -> None:
+    if mnist_data.load_train_samples() is None or mnist_data.load_test_samples() is None:
+        return
+    resource_path = tmp_path / "mlp.py"
+    resource_path.write_text(ORDINARY_MODULE_SOURCE, encoding="utf-8")
+
+    resource = load_training_resource(resource_path)
+
+    assert resource.metadata["data_source"] == "mnist"
+    images, labels = resource.train_batch(step=1, batch_size=4)
+    assert list(images.shape) == [4, 1, 28, 28]
+    assert labels.min().item() >= 0
+    assert labels.max().item() <= 9
+    sample, label = resource.inference_sample(index=0)
+    assert list(sample.shape) == [1, 1, 28, 28]
+    assert 0 <= label <= 9
 
 
 def test_train_resource_endpoint_creates_run_and_forward_replay() -> None:
@@ -133,7 +166,23 @@ def test_train_resource_endpoint_accepts_plain_nn_module_source() -> None:
     assert len(detail["metrics"]) >= 2
 
     forward = client.get(f"/api/runs/{run_id}/forward?index=3").json()
-    assert forward["label"] == 3
+    assert 0 <= forward["label"] <= 9
+    assert len(forward["probabilities"]) == 10
+
+
+def test_plain_nn_module_forward_reports_mnist_source_when_real_samples_exist() -> None:
+    if mnist_data.load_train_samples() is None or mnist_data.load_test_samples() is None:
+        return
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("mlp.py", ORDINARY_MODULE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "mlp.py", "steps": "2"},
+    )
+    run_id = response.json()["run_id"]
+
+    forward = client.get(f"/api/runs/{run_id}/forward?index=3").json()
+
+    assert forward["sample_source"] == "mnist"
     assert len(forward["probabilities"]) == 10
 
 

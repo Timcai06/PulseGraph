@@ -14,10 +14,18 @@ function topPredictions(probabilities: number[], limit = 3) {
     .slice(0, limit);
 }
 
+function sourceBadge(source?: PredictionResponse["sample_source"]) {
+  if (source === "mnist") return "Real dataset";
+  if (source === "synthetic") return "Synthetic probe";
+  if (source === "probe") return "Resource sample";
+  return "No sample";
+}
+
 export function InferenceProbe({ prediction, theme = "dark" }: Props) {
   const probabilities = prediction?.probabilities ?? [];
   const top = topPredictions(probabilities);
   const confidence = top[0]?.value ?? 0;
+  const isRealDataset = prediction?.sample_source === "mnist";
 
   return (
     <div className="inference-body">
@@ -29,10 +37,13 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
         {prediction ? (
           <>
             <div className="recognition-callout">
-              <span>Recognized</span>
+              <span>{isRealDataset ? "Recognized" : "Probe output"}</span>
               <strong>{prediction.prediction}</strong>
               <em>{(confidence * 100).toFixed(1)}% confidence</em>
             </div>
+            <span className={`source-badge source-${prediction.sample_source}`}>
+              {sourceBadge(prediction.sample_source)}
+            </span>
             <div className="top-predictions">
               {top.map((item) => (
                 <span key={item.index}>

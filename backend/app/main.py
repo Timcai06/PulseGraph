@@ -450,14 +450,14 @@ def _as_model_input(sample: torch.Tensor) -> torch.Tensor:
     return sample.unsqueeze(0) if sample.dim() == 1 else sample
 
 
-def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, torch.Tensor]:
+def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, torch.Tensor, str]:
     images: list[torch.Tensor] = []
     labels: list[int] = []
     for index in range(limit):
         image, label = resource.inference_sample(index)
         images.append(_as_model_input(image))
         labels.append(int(label))
-    return torch.cat(images, dim=0).detach().cpu(), torch.tensor(labels, dtype=torch.long)
+    return torch.cat(images, dim=0).detach().cpu(), torch.tensor(labels, dtype=torch.long), resource.sample_source
 
 
 def _run_resource_training_job(
@@ -536,13 +536,15 @@ def _run_resource_training_job(
             "entry_class": run_store.load_entry_class(run_id),
             "input_shape": resource.input_shape,
             "classes": resource.classes,
+            "data_source": resource.metadata.get("data_source"),
+            "sample_source": resource.sample_source,
             "weights": "trained",
         },
     )
 
     sample = io.BytesIO()
-    probe_images, probe_labels = _resource_probe_samples(resource, min(16, batch_size))
-    torch.save({"images": probe_images, "labels": probe_labels}, sample)
+    probe_images, probe_labels, sample_source = _resource_probe_samples(resource, min(64, batch_size))
+    torch.save({"images": probe_images, "labels": probe_labels, "sample_source": sample_source}, sample)
     run_store.save_samples(run_id, sample.getvalue())
 
     checkpoint = io.BytesIO()
@@ -567,7 +569,7 @@ async def train_run_from_resource(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
-    steps: int = Form(8),
+    steps: int = Form(100),
 ):
     collected = await _collect_source_files(files)
     if not collected:
@@ -597,7 +599,7 @@ async def train_run_from_resource(
             [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
         )
 
-    steps = max(1, min(int(steps), 50))
+    steps = max(1, min(int(steps), 500))
     run_store.save_config(
         run_id,
         {
@@ -614,6 +616,8 @@ async def train_run_from_resource(
             "entry_class": "TrainingResource",
             "input_shape": resource.input_shape,
             "classes": resource.classes,
+            "data_source": resource.metadata.get("data_source"),
+            "sample_source": resource.sample_source,
             "weights": "training",
         },
     )
@@ -623,7 +627,13 @@ async def train_run_from_resource(
     return {
         "run_id": run_id,
         "run_kind": "resource-training",
-        "resource": {"name": resource.name, "input_shape": resource.input_shape, "classes": resource.classes},
+        "resource": {
+            "name": resource.name,
+            "input_shape": resource.input_shape,
+            "classes": resource.classes,
+            "data_source": resource.metadata.get("data_source"),
+            "sample_source": resource.sample_source,
+        },
         "inference_only": False,
         "status": "started",
         "saved": saved,

@@ -44,4 +44,17 @@ describe("App workspace layout", () => {
     expect(appSource).toContain("handleDeleteRun");
     expect(controlRailSource).not.toContain("Weights File");
   });
+
+  it("labels inference by data source instead of pretending every probe is recognition", () => {
+    expect(inferenceProbeSource).toContain("sourceBadge");
+    expect(inferenceProbeSource).toContain("Synthetic probe");
+    expect(inferenceProbeSource).toContain("Probe output");
+    expect(inferenceProbeSource).toContain("Recognized");
+  });
+
+  it("makes training steps configurable from the main workflow", () => {
+    expect(appSource).toContain("trainingSteps");
+    expect(controlRailSource).toContain("Training Steps");
+    expect(controlRailSource).toContain("onTrainingStepsChange");
+  });
 });

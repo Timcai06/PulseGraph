@@ -61,6 +61,28 @@
   cursor: pointer;
 }
 
+.number-field {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.number-field span {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.number-field input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-sm);
+  background: var(--surface-deep);
+  color: var(--text);
+  font: 12px var(--font-mono);
+  padding: 8px 9px;
+}
+
 .session-card {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: var(--radius-md);

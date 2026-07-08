@@ -31,11 +31,12 @@ const emptyGraph: ModelGraph = { nodes: [], edges: [] };
 const HEALTH_POLL_MS = 8000;
 const RUNS_POLL_MS = 5000;
 const THEME_KEY = "pulsegraph-theme";
+const DEFAULT_TRAINING_STEPS = 100;
 
 const sampleSourceLabel: Record<PredictionResponse["sample_source"], string> = {
-  mnist: "MNIST",
-  probe: "probe",
-  synthetic: "synthetic"
+  mnist: "Real dataset",
+  probe: "Resource sample",
+  synthetic: "Synthetic probe"
 };
 
 function initialTheme(): Theme {
@@ -66,6 +67,7 @@ export default function App() {
   const [pendingForwardRun, setPendingForwardRun] = useState<string | undefined>();
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
   const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
+  const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const shellRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
   const stream = useRunStream();
@@ -185,7 +187,8 @@ export default function App() {
     setBusy("train");
     setErrorMessage(undefined);
     try {
-      const result = await trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile);
+      const steps = Math.max(1, Math.min(500, Math.trunc(trainingSteps || DEFAULT_TRAINING_STEPS)));
+      const result = await trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile, steps);
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
       setPrediction(undefined);
@@ -301,6 +304,8 @@ export default function App() {
               setDetailRunId(runId);
             }}
             trainAvailable={Boolean(sourceRecipe)}
+            trainingSteps={trainingSteps}
+            onTrainingStepsChange={(steps) => setTrainingSteps(Math.max(1, Math.min(500, Math.trunc(steps || 1))))}
             forwardTargetLabel={forwardTarget ? describeForwardTarget(forwardTarget) : "none"}
             currentRunKind={currentRunKind}
             metricCount={stream.metrics.length}

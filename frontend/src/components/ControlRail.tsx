@@ -9,6 +9,8 @@ type Props = {
   onWatchRun: (runId: string) => void;
   onOpenDetail: (runId: string) => void;
   trainAvailable: boolean;
+  trainingSteps: number;
+  onTrainingStepsChange: (steps: number) => void;
   forwardTargetLabel: string;
   currentRunKind?: string;
   metricCount: number;
@@ -35,6 +37,8 @@ export function ControlRail({
   onWatchRun,
   onOpenDetail,
   trainAvailable,
+  trainingSteps,
+  onTrainingStepsChange,
   forwardTargetLabel,
   currentRunKind,
   metricCount,
@@ -62,6 +66,17 @@ export function ControlRail({
               if (files.length) onResourceUpload(files);
               event.target.value = "";
             }}
+          />
+        </label>
+        <label className="number-field">
+          <span>Training Steps</span>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            step={10}
+            value={trainingSteps}
+            onChange={(event) => onTrainingStepsChange(Number(event.target.value))}
           />
         </label>
         <button onClick={onRunTraining} disabled={!trainAvailable || busy === "train"} type="button">

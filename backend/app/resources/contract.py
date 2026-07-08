@@ -10,6 +10,8 @@ from typing import Any
 import torch
 from torch import nn
 
+from app.runtime import mnist_data
+
 
 class ResourceContractError(ValueError):
     pass
@@ -46,6 +48,11 @@ class LoadedTrainingResource:
     def learning_rate(self) -> float:
         return float(self.metadata.get("learning_rate") or 1e-3)
 
+    @property
+    def sample_source(self) -> str:
+        value = self.metadata.get("sample_source") or self.metadata.get("data_source")
+        return str(value) if value else "probe"
+
     def build_model(self) -> nn.Module:
         builder = getattr(self.module, "build_model", None)
         if callable(builder):
@@ -65,6 +72,8 @@ class LoadedTrainingResource:
         train_batch = getattr(self.module, "train_batch", None)
         if callable(train_batch):
             images, labels = train_batch(step, batch_size)
+        elif self.metadata.get("data_source") == "mnist":
+            images, labels = _mnist_batch(step, batch_size)
         else:
             images, labels = _synthetic_batch(self.input_shape or [1, 28, 28], self.classes or 10, step, batch_size)
         if not isinstance(images, torch.Tensor) or not isinstance(labels, torch.Tensor):
@@ -75,6 +84,8 @@ class LoadedTrainingResource:
         inference_sample = getattr(self.module, "inference_sample", None)
         if callable(inference_sample):
             image, label = inference_sample(index)
+        elif self.metadata.get("data_source") == "mnist":
+            image, label = _mnist_sample(index)
         else:
             image, label = _synthetic_sample(self.input_shape or [1, 28, 28], self.classes or 10, index)
         if not isinstance(image, torch.Tensor):
@@ -135,6 +146,33 @@ def _synthetic_batch(input_shape: list[int], classes: int, step: int, batch_size
     return torch.cat(images, dim=0), torch.tensor(labels, dtype=torch.long)
 
 
+def _mnist_available() -> bool:
+    return mnist_data.load_train_samples() is not None and mnist_data.load_test_samples() is not None
+
+
+def _is_mnist_classifier(input_shape: list[int] | None, classes: int | None) -> bool:
+    return input_shape == [1, 28, 28] and classes == 10
+
+
+def _mnist_batch(step: int, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+    data = mnist_data.load_train_samples()
+    if data is None:
+        raise ResourceContractError("MNIST train data is unavailable.")
+    images, labels = data
+    start = ((step - 1) * batch_size) % images.shape[0]
+    positions = (torch.arange(batch_size) + start) % images.shape[0]
+    return images[positions].float(), labels[positions].long()
+
+
+def _mnist_sample(index: int) -> tuple[torch.Tensor, int]:
+    data = mnist_data.load_test_samples()
+    if data is None:
+        raise ResourceContractError("MNIST test data is unavailable.")
+    images, labels = data
+    position = index % images.shape[0]
+    return images[position : position + 1].float(), int(labels[position].item())
+
+
 def _load_module(source_path: Path, source_root: Path | None = None) -> Any:
     module_name = f"pulsegraph_resource_{uuid.uuid4().hex[:8]}"
     root = str(source_root or source_path.parent)
@@ -191,4 +229,12 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
     else:
         input_shape = list(sample.shape[1:]) if sample.dim() > 1 else list(sample.shape)
     resource.metadata["input_shape"] = input_shape
+    if entry_class and _is_mnist_classifier(resource.input_shape, resource.classes) and _mnist_available():
+        resource.metadata["data_source"] = "mnist"
+        resource.metadata["sample_source"] = "mnist"
+    elif entry_class:
+        resource.metadata.setdefault("data_source", "synthetic")
+        resource.metadata.setdefault("sample_source", "synthetic")
+    else:
+        resource.metadata.setdefault("sample_source", "probe")
     return resource

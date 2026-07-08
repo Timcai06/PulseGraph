@@ -80,7 +80,7 @@ def _evaluate_checkpoints(store: RunStore, detail: RunDetail) -> tuple[list[Chec
     if source_path is None or entry_class is None or probe is None or not detail.checkpoints:
         return [], None
 
-    images, labels = probe
+    images, labels, _sample_source = probe
     evaluations: list[CheckpointEvaluation] = []
     error_analysis: ErrorAnalysis | None = None
     checkpoints = detail.checkpoints[-MAX_EVALUATED_CHECKPOINTS:]

@@ -223,6 +223,8 @@ export type SourceImportResult = {
     name: string;
     input_shape?: number[] | null;
     classes?: number | null;
+    data_source?: string | null;
+    sample_source?: PredictionResponse["sample_source"] | null;
   } | null;
   inference_only: boolean;
   saved: string[];

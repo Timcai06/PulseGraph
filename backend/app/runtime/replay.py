@@ -19,7 +19,7 @@ class ReplayError(Exception):
         self.detail = detail
 
 
-def load_probe_samples(store: RunStore, run_id: str) -> tuple[torch.Tensor, torch.Tensor] | None:
+def load_probe_samples(store: RunStore, run_id: str) -> tuple[torch.Tensor, torch.Tensor, str] | None:
     """Probe samples recorded at training time: {"images": [N,...], "labels": [N]}."""
     path = store.samples_path(run_id)
     if path is None:
@@ -27,19 +27,20 @@ def load_probe_samples(store: RunStore, run_id: str) -> tuple[torch.Tensor, torc
     try:
         bundle = torch.load(path, map_location="cpu", weights_only=True)
         images, labels = bundle["images"], bundle["labels"]
+        sample_source = str(bundle.get("sample_source") or "probe")
     except Exception:
         return None
     if not isinstance(images, torch.Tensor) or not isinstance(labels, torch.Tensor) or not images.shape[0]:
         return None
-    return images.float(), labels.long()
+    return images.float(), labels.long(), sample_source
 
 
 def _pick_sample(store: RunStore, run_id: str, index: int) -> tuple[torch.Tensor, int, str]:
     probe = load_probe_samples(store, run_id)
     if probe is not None:
-        images, labels = probe
+        images, labels, sample_source = probe
         position = index % images.shape[0]
-        return images[position : position + 1], int(labels[position].item()), "probe"
+        return images[position : position + 1], int(labels[position].item()), sample_source
     mnist = mnist_data.load_test_samples()
     if mnist is not None:
         images, labels = mnist
@@ -104,7 +105,7 @@ def run_replay_forward(store: RunStore, run_id: str, checkpoint_step: int = 0, i
         label=label,
         prediction=result["prediction"],
         weights="random" if config.get("weights") == "initial-random" or config.get("inference_only") is True else "trained",
-        sample_source=sample_source if sample_source in {"probe", "mnist"} else "synthetic",
+        sample_source=sample_source if sample_source in {"probe", "mnist", "synthetic"} else "synthetic",
         image_pixels=[float(value) for value in image.flatten().tolist()],
         probabilities=result["probabilities"],
         graph=_run_graph(store, run_id, checkpoint_path),

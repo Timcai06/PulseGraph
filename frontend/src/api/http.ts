@@ -143,7 +143,7 @@ export async function trainSourceRun(
   return response.json();
 }
 
-export async function trainResourceRun(files: NamedSourceFile[], entryFile: string, steps = 8): Promise<SourceImportResult> {
+export async function trainResourceRun(files: NamedSourceFile[], entryFile: string, steps = 100): Promise<SourceImportResult> {
   const form = sourceForm(files);
   form.append("entry_file", entryFile);
   form.append("steps", String(steps));

@@ -47,6 +47,24 @@ def _read_idx_labels(path: Path, limit: int) -> torch.Tensor:
 
 
 @lru_cache(maxsize=1)
+def load_train_samples(limit: int = 2048) -> tuple[torch.Tensor, torch.Tensor] | None:
+    """Load the first `limit` MNIST train images and labels, or None when unavailable."""
+    raw_dir = mnist_raw_dir()
+    images_path = raw_dir / "train-images-idx3-ubyte"
+    labels_path = raw_dir / "train-labels-idx1-ubyte"
+    if not images_path.exists() or not labels_path.exists():
+        return None
+    try:
+        images = _read_idx_images(images_path, limit)
+        labels = _read_idx_labels(labels_path, limit)
+    except (OSError, ValueError):
+        return None
+    if images.shape[0] != labels.shape[0]:
+        return None
+    return images, labels
+
+
+@lru_cache(maxsize=1)
 def load_test_samples(limit: int = 512) -> tuple[torch.Tensor, torch.Tensor] | None:
     """Load the first `limit` MNIST test images and labels, or None when unavailable."""
     raw_dir = mnist_raw_dir()
