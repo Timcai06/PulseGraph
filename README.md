@@ -8,9 +8,9 @@ It turns a runnable Python training resource into a reproducible experiment reco
 
 The first thing to watch is the local training and inference workflow:
 
-<video src="docs/assets/pulsegraph-demo.mp4" controls width="100%"></video>
+[![PulseGraph local training and inference demo](docs/assets/pulsegraph-demo.gif)](docs/assets/pulsegraph-demo.mp4)
 
-If GitHub does not render the embedded video, open it directly:
+Click the preview to open the MP4 version:
 [docs/assets/pulsegraph-demo.mp4](docs/assets/pulsegraph-demo.mp4)
 
 ## What PulseGraph Is
@@ -200,7 +200,7 @@ ffmpeg -y -i ~/Desktop/<your-recording>.mov -c:v libx264 -preset veryfast -crf 2
 Then commit the video together with the README:
 
 ```bash
-git add README.md docs/assets/pulsegraph-demo.mp4
+git add README.md docs/assets/pulsegraph-demo.mp4 docs/assets/pulsegraph-demo.gif
 git commit -m "Add PulseGraph demo video"
 git push origin main
 ```
