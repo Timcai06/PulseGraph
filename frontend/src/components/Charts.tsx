@@ -1,36 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
+import { chartPalette, withAlpha, type Theme } from "../lib/chartTheme";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import type { MetricPoint, StreamStatus } from "../hooks/useRunStream";
 
 export type { MetricPoint };
 
-type MetricsProps = {
-  points: MetricPoint[];
-  status?: StreamStatus;
-};
-
-function useReducedMotion() {
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(query.matches);
-    const onChange = () => setReducedMotion(query.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-
-  return reducedMotion;
-}
-
-export function MetricChart({ points, status = "idle" }: MetricsProps) {
-  const ref = useRef<HTMLDivElement | null>(null);
+function useChart(ref: React.RefObject<HTMLDivElement | null>) {
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     if (!ref.current) return;
-    const chart = echarts.init(ref.current, "dark");
+    const chart = echarts.init(ref.current);
     chartRef.current = chart;
     const onResize = () => chart.resize();
     window.addEventListener("resize", onResize);
@@ -39,73 +20,156 @@ export function MetricChart({ points, status = "idle" }: MetricsProps) {
       chart.dispose();
       chartRef.current = null;
     };
-  }, []);
+  }, [ref]);
+
+  return chartRef;
+}
+
+type MetricsProps = {
+  points: MetricPoint[];
+  status?: StreamStatus;
+  theme?: Theme;
+};
+
+export function MetricChart({ points, status = "idle", theme = "dark" }: MetricsProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const chartRef = useChart(ref);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    chart.setOption({
-      backgroundColor: "transparent",
-      tooltip: { trigger: "axis" },
-      legend: { textStyle: { color: "#9ca3af" } },
-      grid: { left: 42, right: 18, top: 36, bottom: 36 },
-      xAxis: { type: "category", data: points.map((point) => point.step), axisLabel: { color: "#9ca3af" } },
-      yAxis: [
-        { type: "value", axisLabel: { color: "#9ca3af" }, splitLine: { lineStyle: { color: "#1f2937" } } },
-        { type: "value", axisLabel: { color: "#9ca3af" }, splitLine: { show: false } }
-      ],
-      series: [
-        { name: "loss", type: "line", smooth: true, data: points.map((point) => point.loss ?? null), color: "#f59e0b" },
-        { name: "accuracy", type: "line", smooth: true, yAxisIndex: 1, data: points.map((point) => point.accuracy ?? null), color: "#22c55e" },
-        { name: "step ms", type: "line", smooth: true, data: points.map((point) => point.stepTimeMs ?? null), color: "#38bdf8" }
-      ],
-      animationDurationUpdate: reducedMotion ? 0 : 220
+    const palette = chartPalette();
+    const area = (color: string) => ({
+      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: withAlpha(color, 0.22) },
+        { offset: 1, color: withAlpha(color, 0) }
+      ])
     });
-  }, [points, reducedMotion]);
+    chart.setOption(
+      {
+        backgroundColor: "transparent",
+        textStyle: { color: palette.text },
+        tooltip: {
+          trigger: "axis",
+          backgroundColor: palette.tooltipBg,
+          borderColor: palette.grid,
+          textStyle: { color: palette.text }
+        },
+        legend: { textStyle: { color: palette.text } },
+        grid: { left: 42, right: 18, top: 36, bottom: 36 },
+        xAxis: {
+          type: "category",
+          data: points.map((point) => point.step),
+          axisLabel: { color: palette.text },
+          axisLine: { lineStyle: { color: palette.grid } }
+        },
+        yAxis: [
+          { type: "value", axisLabel: { color: palette.text }, splitLine: { lineStyle: { color: palette.grid } } },
+          { type: "value", axisLabel: { color: palette.text }, splitLine: { show: false } }
+        ],
+        series: [
+          {
+            name: "loss",
+            type: "line",
+            smooth: true,
+            showSymbol: false,
+            data: points.map((point) => point.loss ?? null),
+            color: palette.amber,
+            areaStyle: area(palette.amber)
+          },
+          {
+            name: "accuracy",
+            type: "line",
+            smooth: true,
+            showSymbol: false,
+            yAxisIndex: 1,
+            data: points.map((point) => point.accuracy ?? null),
+            color: palette.green,
+            areaStyle: area(palette.green)
+          },
+          {
+            name: "step ms",
+            type: "line",
+            smooth: true,
+            showSymbol: false,
+            data: points.map((point) => point.stepTimeMs ?? null),
+            color: palette.cyan
+          }
+        ],
+        animationDurationUpdate: reducedMotion ? 0 : 220
+      },
+      { notMerge: true }
+    );
+  }, [chartRef, points, reducedMotion, theme]);
 
   return (
     <div className="chart-wrap">
       <div className="chart" ref={ref} />
       {points.length === 0 && (
         <div className="chart-empty">
-          {status === "streaming" ? "Waiting for the first metric event…" : "Start a stream or watch a live run to plot telemetry."}
+          {status === "streaming"
+            ? "Waiting for real training metric events. Source imports are inference-only until a training recipe runs."
+            : "Training Telemetry plots real training events only. Use Run forward for source inference, or watch a recorded training run."}
         </div>
       )}
     </div>
   );
 }
 
-export function ProbabilityChart({ probabilities }: { probabilities: number[] }) {
+type ProbabilityProps = {
+  probabilities: number[];
+  label?: number;
+  prediction?: number;
+  theme?: Theme;
+};
+
+export function ProbabilityChart({ probabilities, label, prediction, theme = "dark" }: ProbabilityProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useChart(ref);
   const reducedMotion = useReducedMotion();
   const labels = useMemo(() => probabilities.map((_, index) => index), [probabilities]);
 
   useEffect(() => {
-    if (!ref.current) return;
-    const chart = echarts.init(ref.current, "dark");
-    chartRef.current = chart;
-    const onResize = () => chart.resize();
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      chart.dispose();
-      chartRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    chart.setOption({
-      backgroundColor: "transparent",
-      grid: { left: 32, right: 12, top: 20, bottom: 30 },
-      xAxis: { type: "category", data: labels, axisLabel: { color: "#9ca3af" } },
-      yAxis: { type: "value", max: 1, axisLabel: { color: "#9ca3af" }, splitLine: { lineStyle: { color: "#1f2937" } } },
-      series: [{ type: "bar", data: probabilities, itemStyle: { color: "#8b5cf6" } }],
-      animationDurationUpdate: reducedMotion ? 0 : 240
-    });
-  }, [labels, probabilities, reducedMotion]);
+    const palette = chartPalette();
+    const colorFor = (index: number) => {
+      if (prediction !== undefined && index === prediction) {
+        return prediction === label ? palette.green : palette.red;
+      }
+      if (label !== undefined && index === label) return palette.amber;
+      return withAlpha(palette.violet, 0.7);
+    };
+    chart.setOption(
+      {
+        backgroundColor: "transparent",
+        grid: { left: 32, right: 12, top: 20, bottom: 30 },
+        xAxis: {
+          type: "category",
+          data: labels,
+          axisLabel: { color: palette.text },
+          axisLine: { lineStyle: { color: palette.grid } }
+        },
+        yAxis: {
+          type: "value",
+          max: 1,
+          axisLabel: { color: palette.text },
+          splitLine: { lineStyle: { color: palette.grid } }
+        },
+        series: [
+          {
+            type: "bar",
+            data: probabilities.map((value, index) => ({ value, itemStyle: { color: colorFor(index) } })),
+            barCategoryGap: "28%"
+          }
+        ],
+        animationDuration: reducedMotion ? 0 : 300,
+        animationDurationUpdate: reducedMotion ? 0 : 240
+      },
+      { notMerge: true }
+    );
+  }, [chartRef, labels, probabilities, label, prediction, reducedMotion, theme]);
 
   return <div className="prob-chart" ref={ref} />;
 }

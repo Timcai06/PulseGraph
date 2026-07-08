@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import re
+from typing import Any
 
 from app.schemas import GraphEdge, GraphNode, ModelGraph, TensorSummary
 
@@ -16,6 +18,21 @@ def _layer_key(tensor_name: str) -> str:
 def _natural_sort_key(value: str) -> list[int | str]:
     parts = re.split(r"(\d+)", value)
     return [int(part) if part.isdigit() else part for part in parts]
+
+
+def build_graph_from_tensor_specs(specs: list[dict[str, Any]]) -> ModelGraph:
+    """Build an inferred graph from lightweight {name, shape} specs (e.g. a live run's graph event)."""
+    tensors = [
+        TensorSummary(
+            name=str(spec["name"]),
+            shape=[int(dim) for dim in spec.get("shape", [])],
+            dtype=str(spec.get("dtype", "unknown")),
+            numel=math.prod(int(dim) for dim in spec.get("shape", [])) if spec.get("shape") else 0,
+        )
+        for spec in specs
+        if isinstance(spec, dict) and spec.get("name")
+    ]
+    return build_inferred_graph(tensors)
 
 
 def build_inferred_graph(tensors: list[TensorSummary]) -> ModelGraph:

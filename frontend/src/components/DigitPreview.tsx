@@ -5,11 +5,13 @@ type Props = {
 };
 
 export function DigitPreview({ pixels, label, prediction }: Props) {
-  const cells = pixels?.length === 28 * 28 ? pixels : Array(28 * 28).fill(0);
+  const isDigitImage = pixels?.length === 28 * 28;
+  const cells = isDigitImage ? pixels : Array(28 * 28).fill(0);
+  const sampleSize = pixels?.length ?? 0;
 
   return (
     <div className="digit-preview">
-      <div className="digit-grid" aria-label="28 by 28 digit preview">
+      <div className={`digit-grid ${isDigitImage ? "" : "generic"}`} aria-label="forward sample preview">
         {cells.map((value, index) => (
           <span
             className="digit-pixel"
@@ -17,6 +19,12 @@ export function DigitPreview({ pixels, label, prediction }: Props) {
             style={{ "--pixel": Math.max(0, Math.min(1, value)) } as React.CSSProperties}
           />
         ))}
+        {!isDigitImage && (
+          <span className="generic-sample">
+            tensor
+            <strong>{sampleSize}</strong>
+          </span>
+        )}
       </div>
       <div className="digit-meta">
         <span>label {label ?? "-"}</span>

@@ -42,8 +42,10 @@ class ModelGraph(BaseModel):
 class InspectionResponse(BaseModel):
     artifact_id: str | None = None
     artifact_sha256: str | None = None
+    weights_fingerprint: str | None = None
+    matched_run_id: str | None = None
     filename: str
-    mode: Literal["state_dict", "checkpoint", "unknown"]
+    mode: Literal["state_dict", "checkpoint", "safetensors", "torchscript", "unknown"]
     safe: bool
     tensors: list[TensorSummary]
     graph: ModelGraph
@@ -75,11 +77,77 @@ class PredictionResponse(BaseModel):
     label: int
     prediction: int
     weights: Literal["trained", "random"] = "random"
-    sample_source: Literal["mnist", "synthetic"] = "synthetic"
+    sample_source: Literal["mnist", "synthetic", "probe"] = "synthetic"
     image_pixels: list[float]
     probabilities: list[float]
     graph: ModelGraph
     layers: list[LayerSnapshot]
+
+
+class CheckpointInfo(BaseModel):
+    step: int
+    epoch: int | None = None
+    path: str
+    size_mb: float
+    fingerprint: str | None = None
+
+
+class RunDetail(BaseModel):
+    """Aggregated provenance for one run: source, config, graph, metrics, checkpoints."""
+
+    run_id: str
+    created_at: float
+    completed: bool
+    source: str | None = None
+    entry_class: str | None = None
+    source_files: list[str] = Field(default_factory=list)
+    source_origin: Literal["recorded", "user-attached"] | None = None
+    config: dict[str, Any] | None = None
+    graph: ModelGraph | None = None
+    has_samples: bool = False
+    metrics: list[dict[str, Any]] = Field(default_factory=list)
+    checkpoints: list[CheckpointInfo] = Field(default_factory=list)
+    event_count: int = 0
+
+
+class RunInsight(BaseModel):
+    severity: Literal["info", "warning", "critical"]
+    title: str
+    detail: str
+    suggestion: str | None = None
+
+
+class LayerHealth(BaseModel):
+    layer_id: str
+    mean_sparsity: float | None = None
+    last_gradient_norm: float | None = None
+    gradient_trend: Literal["stable", "vanishing", "exploding", "unknown"] = "unknown"
+    weight_std_drift: float | None = None
+
+
+class CheckpointEvaluation(BaseModel):
+    step: int
+    accuracy: float | None = None
+    sample_count: int = 0
+
+
+class ErrorAnalysis(BaseModel):
+    confusion: list[list[int]] = Field(default_factory=list)
+    labels: list[int] = Field(default_factory=list)
+    misclassified: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RunReport(BaseModel):
+    run_id: str
+    generated_for_checkpoint: int | None = None
+    final_loss: float | None = None
+    best_accuracy: float | None = None
+    overfit_gap: float | None = None
+    loss_plateau_step: int | None = None
+    layer_health: list[LayerHealth] = Field(default_factory=list)
+    checkpoint_evaluations: list[CheckpointEvaluation] = Field(default_factory=list)
+    error_analysis: ErrorAnalysis | None = None
+    insights: list[RunInsight] = Field(default_factory=list)
 
 
 class RunSummary(BaseModel):
@@ -96,7 +164,18 @@ class RunEvent(BaseModel):
     schema_version: str = "pulsegraph.event.v1"
     ts_ns: int
     source: Literal["training", "runtime_hook", "checkpoint", "infra", "plugin", "animation"]
-    type: Literal["metric", "layer_snapshot", "infra", "checkpoint", "animation", "run_complete"]
+    type: Literal[
+        "metric",
+        "layer_snapshot",
+        "infra",
+        "checkpoint",
+        "animation",
+        "graph",
+        "source_registered",
+        "config_registered",
+        "graph_registered",
+        "run_complete",
+    ]
     run_id: str
     session_id: str | None = None
     step: int

@@ -3,6 +3,7 @@
 @import "./modules/controls.css";
 @import "./modules/graph.css";
 @import "./modules/neural.css";
-@import "./modules/inspector.css";
 @import "./modules/panels.css";
+@import "./modules/detail.css";
+@import "./modules/theme-light.css";
 @import "./modules/responsive.css";

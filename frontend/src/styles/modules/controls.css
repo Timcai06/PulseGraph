@@ -1,16 +1,13 @@
-.control-rail,
-.inspector {
+.control-rail {
   padding: 14px;
   overflow: auto;
 }
 
-.control-rail section + section,
-.inspector section {
+.control-rail section + section {
   margin-top: 18px;
 }
 
 .control-rail h2,
-.inspector h2,
 .panel-heading h2 {
   font-size: 15px;
   letter-spacing: 0;
@@ -34,6 +31,17 @@
   margin-bottom: 10px;
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.file-drop.primary-drop {
+  height: 128px;
+  border-color: rgba(34, 211, 238, 0.65);
+  background: rgba(8, 145, 178, 0.16);
+  color: #cffafe;
+}
+
+.file-drop.compact-drop {
+  height: 78px;
 }
 
 .file-drop:hover {

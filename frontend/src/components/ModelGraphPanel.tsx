@@ -1,11 +1,34 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Handle, Position, ReactFlow, Background, Controls, MiniMap, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import dagre from "@dagrejs/dagre";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type { GraphNode, ModelGraph } from "../api/client";
+import { useReducedMotion } from "../hooks/useReducedMotion";
+import { displayGraph } from "../lib/graphView";
 import { NeuralNetworkView } from "./NeuralNetworkView";
 
 gsap.registerPlugin(useGSAP);
+
+const NODE_WIDTH = 178;
+const NODE_HEIGHT = 96;
+
+function layoutPositions(graph: ModelGraph): Record<string, { x: number; y: number }> {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 36, ranksep: 64 });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const node of graph.nodes) g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  for (const edge of graph.edges) g.setEdge(edge.source, edge.target);
+  dagre.layout(g);
+  const positions: Record<string, { x: number; y: number }> = {};
+  for (const node of graph.nodes) {
+    const placed = g.node(node.id);
+    positions[node.id] = placed
+      ? { x: placed.x - NODE_WIDTH / 2, y: placed.y - NODE_HEIGHT / 2 }
+      : { x: 0, y: 0 };
+  }
+  return positions;
+}
 
 function shapeText(shape?: number[] | null) {
   return shape && shape.length ? shape.join(" x ") : "unknown";
@@ -36,35 +59,30 @@ type Props = {
 
 export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const reducedMotion = useReducedMotion();
   const [viewMode, setViewMode] = useState<"ops" | "neurons">("ops");
+  const visibleGraph = useMemo(() => displayGraph(graph), [graph]);
 
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(query.matches);
-    const onChange = () => setReducedMotion(query.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
+  const positions = useMemo(() => layoutPositions(visibleGraph), [visibleGraph]);
   const nodes = useMemo<Node<GraphNode>[]>(() => {
-    return graph.nodes.map((node, index) => ({
+    return visibleGraph.nodes.map((node) => ({
       id: node.id,
       type: "pulse",
-      position: { x: 80 + index * 230, y: index % 2 ? 190 : 70 },
+      position: positions[node.id] ?? { x: 0, y: 0 },
       data: node,
       selected: node.id === selectedNodeId
     }));
-  }, [graph.nodes, selectedNodeId]);
+  }, [visibleGraph.nodes, positions, selectedNodeId]);
 
   const edges = useMemo<Edge[]>(() => {
-    return graph.edges.map((edge) => ({
+    return visibleGraph.edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
       animated: !reducedMotion && Boolean(pulsedNodeId),
       className: "pulse-edge"
     }));
-  }, [graph.edges, pulsedNodeId, reducedMotion]);
+  }, [visibleGraph.edges, pulsedNodeId, reducedMotion]);
 
   useGSAP(() => {
     if (!pulsedNodeId || reducedMotion || viewMode !== "ops") return;
@@ -85,7 +103,7 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
   }, { dependencies: [pulsedNodeId, reducedMotion, viewMode], scope: containerRef });
 
   const handleSelectLayer = (nodeId: string) => {
-    const node = graph.nodes.find((item) => item.id === nodeId);
+    const node = visibleGraph.nodes.find((item) => item.id === nodeId);
     if (node) onSelect(node);
   };
 
@@ -115,7 +133,7 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
           <Controls />
         </ReactFlow>
       ) : (
-        <NeuralNetworkView graph={graph} probabilities={probabilities} pulsedNodeId={pulsedNodeId} onSelectLayer={handleSelectLayer} />
+        <NeuralNetworkView graph={visibleGraph} probabilities={probabilities} pulsedNodeId={pulsedNodeId} onSelectLayer={handleSelectLayer} />
       )}
     </section>
   );

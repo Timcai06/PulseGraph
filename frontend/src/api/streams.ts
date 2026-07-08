@@ -1,6 +1,17 @@
 import type { RunEvent, RunEventType } from "./types";
 
-const EVENT_TYPES: RunEventType[] = ["metric", "layer_snapshot", "infra", "checkpoint", "animation", "run_complete"];
+const EVENT_TYPES: RunEventType[] = [
+  "metric",
+  "layer_snapshot",
+  "infra",
+  "checkpoint",
+  "animation",
+  "graph",
+  "source_registered",
+  "config_registered",
+  "graph_registered",
+  "run_complete"
+];
 
 function openStream(url: string, onEvent: (event: RunEvent) => void): EventSource {
   const source = new EventSource(url);

@@ -6,6 +6,7 @@ from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
+from app.events.run_store import RunStore
 from app.schemas import RunEvent, RunSummary
 
 BUFFER_SIZE = 1024
@@ -29,10 +30,32 @@ class LiveRun:
 class RunRegistry:
     """In-memory registry of live training runs fed by the ingest endpoint."""
 
-    def __init__(self, max_runs: int = MAX_RUNS, subscriber_queue_size: int = SUBSCRIBER_QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        max_runs: int = MAX_RUNS,
+        subscriber_queue_size: int = SUBSCRIBER_QUEUE_SIZE,
+        store: RunStore | None = None,
+    ) -> None:
         self._runs: dict[str, LiveRun] = {}
         self.max_runs = max_runs
         self.subscriber_queue_size = subscriber_queue_size
+        self.store = store
+
+    def load_from_store(self) -> int:
+        """Restore persisted runs into memory; returns how many were loaded."""
+        if self.store is None:
+            return 0
+        for run_id, events in self.store.load_all(BUFFER_SIZE).items():
+            self._ensure_capacity(run_id)
+            run = LiveRun(run_id=run_id)
+            run.created_at = events[0].ts_ns / 1e9
+            run.last_event_at = events[-1].ts_ns / 1e9
+            run.event_count = len(events)
+            run.last_step = max(event.step for event in events)
+            run.completed = any(event.type == "run_complete" for event in events)
+            run.buffer.extend(events)
+            self._runs[run_id] = run
+        return len(self._runs)
 
     def _ensure_capacity(self, run_id: str) -> None:
         if run_id in self._runs or len(self._runs) < self.max_runs:
@@ -43,6 +66,8 @@ class RunRegistry:
     def publish(self, run_id: str, events: list[RunEvent]) -> LiveRun:
         self._ensure_capacity(run_id)
         run = self._runs.setdefault(run_id, LiveRun(run_id=run_id))
+        if self.store is not None:
+            self.store.append(run_id, events)
         for event in events:
             run.buffer.append(event)
             run.event_count += 1
@@ -97,4 +122,4 @@ class RunRegistry:
             run.subscribers.discard(queue)
 
 
-run_registry = RunRegistry()
+run_registry = RunRegistry(store=RunStore())

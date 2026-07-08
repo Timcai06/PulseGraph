@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsegraph-client"
+version = "0.1.0"
+description = "Training-time telemetry and provenance recording client for PulseGraph"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+torch = ["torch>=2.2"]
+
+[tool.setuptools]
+py-modules = ["pulsegraph_client", "pulsegraph_torch"]

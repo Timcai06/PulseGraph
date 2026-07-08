@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import { openDemoStream, openRunStream, type LayerSnapshot, type RunEvent } from "../api/client";
+import { openDemoStream, openRunStream, type LayerSnapshot, type ModelGraph, type RunEvent } from "../api/client";
 
 export type StreamStatus = "idle" | "streaming" | "complete" | "error";
 
@@ -11,12 +11,24 @@ export type MetricPoint = {
   memoryPeakMb?: number;
 };
 
+export type LayerHistoryPoint = {
+  step: number;
+  activation_mean?: number | null;
+  activation_sparsity?: number | null;
+  gradient_norm?: number | null;
+  weight_std?: number | null;
+};
+
+const MAX_LAYER_HISTORY = 120;
+
 type StreamState = {
   status: StreamStatus;
   runId?: string;
   metrics: MetricPoint[];
   events: RunEvent[];
   layerSnapshots: Record<string, LayerSnapshot>;
+  layerHistory: Record<string, LayerHistoryPoint[]>;
+  graph?: ModelGraph;
   pulsedNodeId?: string;
   device: string;
 };
@@ -35,6 +47,7 @@ const initialState: StreamState = {
   metrics: [],
   events: [],
   layerSnapshots: {},
+  layerHistory: {},
   device: "unknown"
 };
 
@@ -82,7 +95,16 @@ function applyEvent(state: StreamState, event: RunEvent): StreamState {
           weight_std: event.payload.weight_std
         }
       };
+      const history = state.layerHistory[event.layer] ?? [];
+      next.layerHistory = {
+        ...state.layerHistory,
+        [event.layer]: [...history, { step: event.step, ...event.payload }].slice(-MAX_LAYER_HISTORY)
+      };
       next.pulsedNodeId = event.layer;
+      return next;
+    }
+    case "graph": {
+      if (event.payload.graph?.nodes?.length) next.graph = event.payload.graph;
       return next;
     }
     case "animation": {

@@ -102,6 +102,84 @@ class PulseGraphRun:
     def complete(self, step: int, epoch: int | None = None) -> None:
         self._emit("training", "run_complete", step, epoch)
 
+    def graph(self, tensors: list[dict[str, Any]], step: int = 0, epoch: int | None = None) -> None:
+        """Describe the model as {name, shape} tensor specs; the backend infers the graph."""
+        self._emit("training", "graph", step, epoch, payload={"tensors": tensors})
+
+    # ---- provenance registration (training-time recording) ----
+
+    def register_source(self, source_code: str, entry_class: str) -> None:
+        """Record the model's source so the backend can rebuild it for forward replay."""
+        self._emit(
+            "training",
+            "source_registered",
+            step=0,
+            payload={"classes": [{"name": entry_class, "source_code": source_code}], "entry_class": entry_class},
+        )
+
+    def register_config(self, config: dict[str, Any]) -> None:
+        """Record training hyperparameters (lr, epochs, batch size, optimizer, ...)."""
+        self._emit("training", "config_registered", step=0, payload={"config": config})
+
+    def register_graph(self, graph_json: dict[str, Any]) -> None:
+        """Record the exact fx-traced compute graph (see pulsegraph_torch.trace_model_graph)."""
+        self._emit("training", "graph_registered", step=0, payload={"graph": graph_json})
+        # also mirror it into the live stream so an attached dashboard updates immediately
+        self._emit("training", "graph", step=0, payload={"graph": graph_json})
+
+    # ---- binary artifact uploads ----
+
+    def _post_bytes(self, path: str, data: bytes) -> dict[str, Any] | None:
+        if not self._enabled:
+            return None
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            data=data,
+            headers={"Content-Type": "application/octet-stream"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15.0) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
+            print(f"PulseGraph: upload to {path} failed")
+            return None
+
+    def upload_samples(self, data: bytes) -> bool:
+        """Upload serialized probe samples (torch.save of {'images', 'labels'} bytes)."""
+        return self._post_bytes(f"/api/runs/{self.run_id}/samples", data) is not None
+
+    def save_checkpoint(self, step: int, epoch: int | None, model: Any, path: str | None = None) -> str | None:
+        """Save model.state_dict() as a run checkpoint (uploaded to the backend store).
+
+        Returns the backend-side path, or None when telemetry is disabled/failed.
+        Optionally also writes a local copy when `path` is given.
+        """
+        if not self._enabled:
+            return None
+        import io
+
+        import torch  # lazy: keep this module importable without torch
+
+        buffer = io.BytesIO()
+        torch.save(model.state_dict(), buffer)
+        data = buffer.getvalue()
+        if path:
+            with open(path, "wb") as handle:
+                handle.write(data)
+        query = f"step={step}" + (f"&epoch={epoch}" if epoch is not None else "")
+        result = self._post_bytes(f"/api/runs/{self.run_id}/checkpoints?{query}", data)
+        if result is None:
+            return None
+        self.checkpoint(
+            step,
+            epoch,
+            path=result.get("path"),
+            size_mb=round(len(data) / (1024**2), 3),
+            fingerprint=result.get("fingerprint"),
+        )
+        return result.get("path")
+
     def training_step(
         self,
         step: int,

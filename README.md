@@ -38,29 +38,51 @@ The current implementation includes:
 - SHA-256 artifact identity for uploaded model files.
 - Inferred graph generation from state dict tensor names and shapes.
 - Trusted demo MLP runtime backed by real data: it loads the trained checkpoint from
-  `exercises/02_mnist_digit_recognition/outputs/mnist_mlp.pt` and real MNIST test digits
+  `model_repo/platform_validation/mnist_digit_recognition/outputs/mnist_mlp.pt` and real MNIST test digits
   (`data/mnist/MNIST/raw`), falling back to random weights and synthetic digits when absent.
   Override paths with `PULSEGRAPH_MODEL_PATH` and `PULSEGRAPH_MNIST_DIR`.
 - Live run ingestion: training scripts POST batched events to `/api/runs/{run_id}/events`,
   the dashboard lists runs from `/api/runs` and follows them over SSE at `/api/runs/{run_id}/stream`.
 - `client/pulsegraph_client.py`: a stdlib-only emitter (`PulseGraphRun`) that batches events on a
-  background thread; `exercises/02_mnist_digit_recognition/02_train_mlp.py` uses it to stream real
+  background thread; `model_repo/platform_validation/mnist_digit_recognition/02_train_mlp.py` uses it to stream real
   training metrics, layer snapshots, infra telemetry, and checkpoint events.
 - SSE demo training stream with metric, layer, infra, checkpoint, animation, and completion events.
 - React dashboard with React Flow model graph, ECharts metrics/probabilities, GSAP node pulse
   animation, live-run picker, and empty/loading/error states.
 
+## Training Provenance (record everything, replay anything)
+
+PulseGraph records the full context of a training run so any resulting `.pt` file can be
+traced back and replayed later:
+
+- `register_source` / `register_config` / `register_graph`: model source, hyperparameters,
+  and the exact `torch.fx` compute graph are captured at training time.
+- Probe samples (a small input batch) are stored with the run so replay works for any data domain.
+- Per-epoch checkpoints are uploaded to `backend/runs/{run_id}/checkpoints/` with a
+  **canonical weights fingerprint** (name + shape + dtype + raw bytes), independent of
+  serialization format.
+- Uploading any `.pt`/`.safetensors` matches by fingerprint and opens the run's full archive.
+- `GET /api/runs/{id}/forward` rebuilds the model from recorded source + checkpoint and runs
+  inference with per-layer activation capture. Only source recorded into the local runs/
+  store is ever executed.
+- `GET /api/runs/{id}/report` produces a diagnosis report: overfit gap, loss plateau,
+  layer health (dead neurons, gradient anomalies), per-checkpoint probe accuracy,
+  confusion matrix with misclassified samples, and rule-based insights.
+
 ## Stream a Real Training Run
 
-With the backend running, start the MNIST exercise in another terminal:
+With the backend running, train via the persistent training layer:
 
 ```bash
 cd /Users/tim/Documents/ai_infra
-/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python exercises/02_mnist_digit_recognition/02_train_mlp.py
+/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python training/train.py --model mlp --epochs 3
+/opt/homebrew/Caskroom/miniconda/base/envs/ai_infra/bin/python training/train.py --model cnn --epochs 2
 ```
 
-The run appears under "Live Runs" in the dashboard; click it to follow metrics live.
+The run appears under "Live Runs" in the dashboard: click it to follow metrics live, or open
+its detail view (ⓘ) for source, config, checkpoint timeline, replay, and the analysis report.
 Set `PULSEGRAPH_URL=""` to disable telemetry, or point it at a non-default backend URL.
+The client is an installable package: `pip install -e projects/pulsegraph/client`.
 
 ## Run Locally
 

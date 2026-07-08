@@ -15,21 +15,19 @@ const demoGraph: ModelGraph = {
 };
 
 describe("buildNeuralLayers", () => {
-  it("maps a model graph into input hidden and output neural layers", () => {
+  it("maps a model graph into model-layer neural layers without showing the input placeholder", () => {
     const layers = buildNeuralLayers({
       graph: demoGraph,
       probabilities: [0.05, 0.7, 0.25],
       pulsedNodeId: "linear1"
     });
 
-    expect(layers.map((layer) => layer.role)).toEqual(["input", "hidden", "output"]);
-    expect(layers[0].sourceNodeId).toBe("input");
-    expect(layers[1].sourceNodeId).toBe("linear1");
-    expect(layers[1].active).toBe(true);
-    expect(layers[2].neurons).toHaveLength(3);
-    expect(layers[2].neurons[1].intensity).toBeCloseTo(0.7);
-    expect(layers[2].neurons[1].strongest).toBe(true);
+    expect(layers.map((layer) => layer.role)).toEqual(["hidden", "output"]);
+    expect(layers[0].sourceNodeId).toBe("linear1");
+    expect(layers[0].active).toBe(true);
+    expect(layers[1].neurons).toHaveLength(3);
+    expect(layers[1].neurons[1].intensity).toBeCloseTo(0.7);
+    expect(layers[1].neurons[1].strongest).toBe(true);
     expect(layers[0].neurons[0].activationOrder).toBeLessThan(layers[1].neurons[0].activationOrder);
-    expect(layers[1].neurons[0].activationOrder).toBeLessThan(layers[2].neurons[0].activationOrder);
   });
 });

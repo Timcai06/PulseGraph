@@ -6,6 +6,7 @@ from functools import lru_cache
 import torch
 from torch import nn
 
+from app.inspector.fx_tracer import trace_model_graph
 from app.runtime.mnist_data import load_test_samples, test_sample_indices_by_digit, trained_model_path
 from app.schemas import GraphEdge, GraphNode, LayerSnapshot, ModelGraph, PredictionResponse
 
@@ -57,39 +58,20 @@ def get_demo_model() -> tuple[DemoMLP, str]:
     return model, weights
 
 
+DEMO_NODE_NAMES = {"net.0": "flatten", "net.1": "linear1", "net.2": "relu1", "net.3": "linear2"}
+
+
+@lru_cache(maxsize=1)
 def demo_graph() -> ModelGraph:
-    nodes = [
-        GraphNode(id="input", label="Input", kind="Input", output_shape=[1, 28, 28], confidence="trusted"),
-        GraphNode(id="flatten", label="Flatten", kind="Flatten", input_shape=[1, 28, 28], output_shape=[784], confidence="trusted"),
-        GraphNode(
-            id="linear1",
-            label="Linear 784 -> 128",
-            kind="Linear",
-            input_shape=[784],
-            output_shape=[128],
-            param_count=(784 * 128) + 128,
-            confidence="trusted",
-        ),
-        GraphNode(id="relu1", label="ReLU", kind="ReLU", input_shape=[128], output_shape=[128], confidence="trusted"),
-        GraphNode(
-            id="linear2",
-            label="Linear 128 -> 10",
-            kind="Linear",
-            input_shape=[128],
-            output_shape=[10],
-            param_count=(128 * 10) + 10,
-            confidence="trusted",
-        ),
-        GraphNode(id="softmax", label="Softmax", kind="Softmax", input_shape=[10], output_shape=[10], confidence="trusted"),
-    ]
-    edges = [
-        GraphEdge(id="input->flatten", source="input", target="flatten"),
-        GraphEdge(id="flatten->linear1", source="flatten", target="linear1"),
-        GraphEdge(id="linear1->relu1", source="linear1", target="relu1"),
-        GraphEdge(id="relu1->linear2", source="relu1", target="linear2"),
-        GraphEdge(id="linear2->softmax", source="linear2", target="softmax"),
-    ]
-    return ModelGraph(nodes=nodes, edges=edges)
+    """Trace the trusted demo model with torch.fx instead of hand-writing the graph."""
+    model, _ = get_demo_model()
+    graph = trace_model_graph(model, torch.zeros(1, 1, 28, 28), rename=DEMO_NODE_NAMES)
+    # forward() returns logits; the runtime applies softmax as an extra step.
+    graph.nodes.append(
+        GraphNode(id="softmax", label="Softmax", kind="Softmax", input_shape=[10], output_shape=[10], confidence="trusted")
+    )
+    graph.edges.append(GraphEdge(id="linear2->softmax", source="linear2", target="softmax"))
+    return graph
 
 
 def _synthetic_digit(label: int) -> torch.Tensor:

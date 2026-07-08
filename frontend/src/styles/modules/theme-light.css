@@ -1,0 +1,86 @@
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #eef2f8;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-deep: rgba(226, 232, 240, 0.55);
+  --surface-raised: rgba(255, 255, 255, 0.97);
+
+  --border: rgba(100, 116, 139, 0.26);
+  --border-strong: rgba(71, 85, 105, 0.35);
+
+  --text: #0f172a;
+  --text-soft: #334155;
+  --text-muted: #64748b;
+
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --accent-border: rgba(37, 99, 235, 0.35);
+  --accent-text: #1d4ed8;
+
+  --cyan: #0284c7;
+  --cyan-strong: rgba(2, 132, 199, 0.9);
+  --teal: #0d9488;
+  --violet: #7c3aed;
+  --green: #16a34a;
+  --amber: #d97706;
+  --red: #dc2626;
+
+  --chip-bg: rgba(255, 255, 255, 0.75);
+  --shadow-panel: 0 16px 44px rgba(15, 23, 42, 0.12);
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 30% 10%, rgba(37, 99, 235, 0.1), transparent 32%),
+    radial-gradient(circle at 70% 0%, rgba(124, 58, 237, 0.07), transparent 34%),
+    var(--bg);
+}
+
+[data-theme="light"] .status-strip span {
+  background: var(--chip-bg);
+}
+
+[data-theme="light"] button:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.16);
+}
+
+[data-theme="light"] .model-node {
+  background: var(--surface-raised);
+  color: var(--text);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+[data-theme="light"] .node-kind {
+  color: var(--cyan);
+}
+
+[data-theme="light"] .neural-view {
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.4), rgba(14, 116, 144, 0.06), rgba(226, 232, 240, 0.4));
+}
+
+[data-theme="light"] .neural-layer {
+  color: var(--text);
+  background: var(--surface-deep);
+}
+
+[data-theme="light"] .neuron {
+  color: #0f172a;
+}
+
+[data-theme="light"] .file-drop {
+  color: var(--accent-text);
+  background: rgba(37, 99, 235, 0.07);
+}
+
+[data-theme="light"] .event {
+  background: var(--chip-bg);
+  color: var(--text-soft);
+}
+
+[data-theme="light"] .detail-overlay {
+  background: rgba(148, 163, 184, 0.35);
+}
+
+[data-theme="light"] .react-flow__minimap {
+  background: var(--surface);
+}

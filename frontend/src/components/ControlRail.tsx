@@ -1,25 +1,46 @@
-import { Loader2, Play, Radio, RotateCcw, Upload, Zap } from "lucide-react";
-import type { RunSummary } from "../api/client";
+import { Dumbbell, FileCode2, Info, Loader2, Play, Radio, RotateCcw, Upload, Zap } from "lucide-react";
+import type { NamedSourceFile, RunSummary } from "../api/client";
 
 type Props = {
   onInspect: (file: File) => void;
-  onDemoForward: () => void;
+  onSourceImport: (files: NamedSourceFile[]) => void;
+  onTrainSource: () => void;
+  onRunForward: () => void;
   onStartStream: () => void;
   onReset: () => void;
   onWatchRun: (runId: string) => void;
+  onOpenDetail: (runId: string) => void;
+  onImportAttach: () => void;
+  importAvailable: boolean;
+  trainAvailable: boolean;
+  forwardTargetLabel: string;
   liveRuns: RunSummary[];
   watchedRunId?: string;
-  busy?: "inspect" | "forward";
+  busy?: "inspect" | "source" | "train" | "forward";
   streaming: boolean;
   errorMessage?: string;
 };
 
+function toNamedFiles(list: FileList | null): NamedSourceFile[] {
+  if (!list) return [];
+  return Array.from(list)
+    .filter((file) => file.name.endsWith(".py") || file.name.endsWith(".zip"))
+    .map((file) => ({ file, path: file.name }));
+}
+
 export function ControlRail({
   onInspect,
-  onDemoForward,
+  onSourceImport,
+  onTrainSource,
+  onRunForward,
   onStartStream,
   onReset,
   onWatchRun,
+  onOpenDetail,
+  onImportAttach,
+  importAvailable,
+  trainAvailable,
+  forwardTargetLabel,
   liveRuns,
   watchedRunId,
   busy,
@@ -29,8 +50,32 @@ export function ControlRail({
   return (
     <aside className="control-rail">
       <section>
-        <h2>Model File</h2>
-        <label className={`file-drop ${busy === "inspect" ? "busy" : ""}`}>
+        <h2>Python Source</h2>
+        <label className={`file-drop primary-drop ${busy === "source" ? "busy" : ""}`}>
+          {busy === "source" ? <Loader2 size={18} className="spin" /> : <FileCode2 size={18} />}
+          <span>{busy === "source" ? "Creating run…" : "Import .py / .zip"}</span>
+          <input
+            type="file"
+            multiple
+            accept=".py,.zip"
+            disabled={busy === "source"}
+            onChange={(event) => {
+              const files = toNamedFiles(event.target.files);
+              if (files.length) onSourceImport(files);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <button onClick={onTrainSource} disabled={!trainAvailable || busy === "train"} type="button">
+          {busy === "train" ? <Loader2 size={16} className="spin" /> : <Dumbbell size={16} />} Train source
+        </button>
+        <p className="hint">Upload source, then run forward or train a short local recipe.</p>
+        {errorMessage && <p className="error-hint">{errorMessage}</p>}
+      </section>
+
+      <section>
+        <h2>Weights File</h2>
+        <label className={`file-drop compact-drop ${busy === "inspect" ? "busy" : ""}`}>
           {busy === "inspect" ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
           <span>{busy === "inspect" ? "Inspecting…" : "Inspect .pt"}</span>
           <input
@@ -44,15 +89,23 @@ export function ControlRail({
             }}
           />
         </label>
-        <p className="hint">Default path uses safe weights-only inspection.</p>
-        {errorMessage && <p className="error-hint">{errorMessage}</p>}
+        <p className="hint">Secondary path: inspect weights, then attach source when provenance is missing.</p>
+        {importAvailable && (
+          <button onClick={onImportAttach} type="button">
+            <FileCode2 size={16} /> Attach source for replay
+          </button>
+        )}
+        {importAvailable && (
+          <p className="hint">No recorded provenance for these weights — attach the model source to make it replayable.</p>
+        )}
       </section>
 
       <section>
-        <h2>Trusted Demo</h2>
-        <button onClick={onDemoForward} disabled={busy === "forward"}>
+        <h2>Forward Probe</h2>
+        <button onClick={onRunForward} disabled={busy === "forward"}>
           {busy === "forward" ? <Loader2 size={16} className="spin" /> : <Zap size={16} />} Run forward
         </button>
+        <p className="hint">{forwardTargetLabel}</p>
         <button onClick={onStartStream}>
           <Play size={16} /> {streaming && !watchedRunId ? "Restart stream" : "Start stream"}
         </button>
@@ -65,23 +118,32 @@ export function ControlRail({
         <h2>Live Runs</h2>
         {liveRuns.length === 0 && (
           <p className="hint">
-            No live runs yet. Start <code>02_train_mlp.py</code> with the backend running to stream real training
-            telemetry here.
+            No active training runs. Completed runs are in History.
           </p>
         )}
         {liveRuns.map((run) => (
-          <button
-            className={`run-item ${watchedRunId === run.run_id ? "watching" : "secondary"}`}
-            key={run.run_id}
-            onClick={() => onWatchRun(run.run_id)}
-            type="button"
-          >
-            <Radio size={14} className={run.completed ? "" : "live"} />
-            <span className="run-name">{run.run_id}</span>
-            <span className="run-meta">
-              {run.completed ? "done" : "live"} · step {run.last_step}
-            </span>
-          </button>
+          <div className="run-row" key={run.run_id}>
+            <button
+              className={`run-item ${watchedRunId === run.run_id ? "watching" : "secondary"}`}
+              onClick={() => onWatchRun(run.run_id)}
+              type="button"
+            >
+              <Radio size={14} className={run.completed ? "" : "live"} />
+              <span className="run-name">{run.run_id}</span>
+              <span className="run-meta">
+                {run.completed ? "done" : "live"} · step {run.last_step}
+              </span>
+            </button>
+            <button
+              className="icon-button"
+              onClick={() => onOpenDetail(run.run_id)}
+              type="button"
+              aria-label={`Open ${run.run_id} detail and report`}
+              title="Detail & report"
+            >
+              <Info size={14} />
+            </button>
+          </div>
         ))}
       </section>
     </aside>

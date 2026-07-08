@@ -1,10 +1,13 @@
-import { Activity, Cpu, GitBranch } from "lucide-react";
+import { Activity, Cpu, GitBranch, Moon, Sun } from "lucide-react";
+import type { Theme } from "../lib/chartTheme";
 
 type Props = {
   backendStatus: string;
   runStatus: string;
   step: number;
   device: string;
+  theme: Theme;
+  onToggleTheme: () => void;
 };
 
 function backendDotClass(status: string) {
@@ -20,7 +23,7 @@ function runDotClass(status: string) {
   return "idle";
 }
 
-export function TopStatusBar({ backendStatus, runStatus, step, device }: Props) {
+export function TopStatusBar({ backendStatus, runStatus, step, device, theme, onToggleTheme }: Props) {
   return (
     <header className="top-bar">
       <div className="brand">
@@ -43,6 +46,14 @@ export function TopStatusBar({ backendStatus, runStatus, step, device }: Props) 
           <Cpu size={16} /> {device}
         </span>
         <span className="numeric">step {step}</span>
+        <button
+          className="theme-toggle"
+          onClick={onToggleTheme}
+          type="button"
+          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
       </div>
     </header>
   );

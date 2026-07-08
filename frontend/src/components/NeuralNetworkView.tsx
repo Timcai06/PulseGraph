@@ -49,22 +49,11 @@ function makeNeurons(prefix: string, count: number, layerIndex: number, intensit
 }
 
 export function buildNeuralLayers({ graph, probabilities, pulsedNodeId }: BuildNeuralLayersInput): NeuralLayer[] {
-  const inputNode = graph.nodes.find((node) => node.kind === "Input") ?? graph.nodes[0];
   const linearNodes = graph.nodes.filter((node) => node.kind === "Linear");
-  const hiddenNode = linearNodes[0] ?? graph.nodes.find((node) => node.id !== inputNode?.id);
+  const hiddenNode = linearNodes[0] ?? graph.nodes[0];
   const outputNode = graph.nodes.find((node) => node.kind === "Softmax") ?? linearNodes[linearNodes.length - 1] ?? graph.nodes[graph.nodes.length - 1];
 
   const layers: NeuralLayer[] = [];
-  if (inputNode) {
-    layers.push({
-      id: "neural-input",
-      label: "Input pixels",
-      role: "input",
-      sourceNodeId: inputNode.id,
-      active: pulsedNodeId === inputNode.id,
-      neurons: makeNeurons("input", 8, 0)
-    });
-  }
   if (hiddenNode) {
     const hiddenWidth = hiddenNode.output_shape?.[0] ?? 8;
     layers.push({
@@ -73,7 +62,7 @@ export function buildNeuralLayers({ graph, probabilities, pulsedNodeId }: BuildN
       role: "hidden",
       sourceNodeId: hiddenNode.id,
       active: pulsedNodeId === hiddenNode.id,
-      neurons: makeNeurons("hidden", hiddenWidth, 1)
+      neurons: makeNeurons("hidden", hiddenWidth, 0)
     });
   }
   if (outputNode) {
@@ -84,7 +73,7 @@ export function buildNeuralLayers({ graph, probabilities, pulsedNodeId }: BuildN
       role: "output",
       sourceNodeId: outputNode.id,
       active: pulsedNodeId === outputNode.id,
-      neurons: makeNeurons("output", outputWidth, 2, probabilities)
+      neurons: makeNeurons("output", outputWidth, 1, probabilities)
     });
   }
 

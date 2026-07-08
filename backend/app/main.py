@@ -1,22 +1,46 @@
 from __future__ import annotations
 
+import io
 import tempfile
+import time
+import uuid
+import zipfile
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import torch
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app.events.run_registry import run_registry
+from app.events.run_store import RunStore
 from app.events.training_stream import demo_training_events, to_sse
+from app.inspector.fingerprint import fingerprint_state_dict
+from app.inspector.fx_tracer import trace_model_graph
+from app.inspector.graph_builder import build_graph_from_tensor_specs
 from app.inspector.pt_inspector import inspect_pt_file
+from app.inspector.safetensors_inspector import inspect_safetensors_file
+from app.inspector.source_analyzer import find_module_classes
+from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
+from app.reports.analyzer import build_run_report
 from app.runtime.demo_mlp import demo_graph, run_demo_forward
-from app.schemas import RunEvent, RunSummary
+from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
+from app.schemas import RunDetail, RunEvent, RunSummary
 
 
 app = FastAPI(title="PulseGraph API", version="0.1.0")
+run_store = RunStore()
+
+
+@app.on_event("startup")
+def restore_persisted_runs() -> None:
+    run_registry.load_from_store()
+
+
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+MAX_ARTIFACT_UPLOAD_BYTES = 50 * 1024 * 1024
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,13 +80,583 @@ def list_runs() -> list[RunSummary]:
     return run_registry.list_runs()
 
 
+def _persist_registration(run_id: str, event: RunEvent) -> None:
+    """Registration events also land as standalone provenance files."""
+    if event.type == "source_registered":
+        classes = event.payload.get("classes") or []
+        source_code = "\n\n".join(str(item.get("source_code", "")) for item in classes if isinstance(item, dict))
+        if source_code.strip():
+            run_store.save_source(run_id, source_code, str(event.payload.get("entry_class") or "") or None)
+    elif event.type == "config_registered" and isinstance(event.payload.get("config"), dict):
+        run_store.save_config(run_id, event.payload["config"])
+    elif event.type == "graph_registered" and isinstance(event.payload.get("graph"), dict):
+        run_store.save_graph(run_id, event.payload["graph"])
+
+
 @app.post("/api/runs/{run_id}/events")
 def ingest_run_events(run_id: str, events: RunEvent | list[RunEvent]):
     batch = events if isinstance(events, list) else [events]
     for event in batch:
         event.run_id = run_id
+        if event.type == "graph" and isinstance(event.payload.get("tensors"), list):
+            graph = build_graph_from_tensor_specs(event.payload["tensors"])
+            event.payload = {"graph": graph.model_dump()}
+        _persist_registration(run_id, event)
     run = run_registry.publish(run_id, batch)
     return {"accepted": len(batch), "run_id": run_id, "completed": run.completed}
+
+
+@app.post("/api/runs/{run_id}/checkpoints")
+async def upload_checkpoint(run_id: str, request: Request, step: int, epoch: int | None = None):
+    data = await request.body()
+    if len(data) > MAX_ARTIFACT_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Checkpoint upload is larger than 50 MB.")
+    path = run_store.save_checkpoint_bytes(run_id, step, data, epoch)
+    fingerprint = None
+    try:
+        state_dict = torch.load(path, map_location="cpu", weights_only=True)
+        if isinstance(state_dict, dict):
+            fingerprint = fingerprint_state_dict(state_dict)
+            run_store.record_fingerprint(run_id, path.name, fingerprint)
+    except Exception:
+        pass
+    return {"run_id": run_id, "step": step, "path": str(path), "fingerprint": fingerprint}
+
+
+@app.post("/api/runs/{run_id}/samples")
+async def upload_samples(run_id: str, request: Request):
+    data = await request.body()
+    if len(data) > MAX_ARTIFACT_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Samples upload is larger than 50 MB.")
+    path = run_store.save_samples(run_id, data)
+    return {"run_id": run_id, "path": str(path)}
+
+
+async def _collect_source_files(files: list[UploadFile]) -> list[tuple[str, str]]:
+    """Decode uploaded .py files (expanding .zip archives) into (relative_path, content)."""
+    collected: list[tuple[str, str]] = []
+    for upload in files:
+        name = (upload.filename or "").replace("\\", "/")
+        data = await upload.read()
+        if name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    for member in archive.namelist():
+                        normalized = member.replace("\\", "/")
+                        if not normalized.lower().endswith(".py") or ".." in normalized.split("/"):
+                            continue
+                        collected.append((normalized, archive.read(member).decode("utf-8", errors="replace")))
+            except zipfile.BadZipFile:
+                continue
+        elif name.lower().endswith(".py"):
+            collected.append((name, data.decode("utf-8", errors="replace")))
+    return collected
+
+
+RunEventType = Literal[
+    "metric",
+    "layer_snapshot",
+    "infra",
+    "checkpoint",
+    "animation",
+    "graph",
+    "source_registered",
+    "config_registered",
+    "graph_registered",
+    "run_complete",
+]
+RunEventSource = Literal["training", "runtime_hook", "checkpoint", "infra", "plugin", "animation"]
+
+
+def _run_event(
+    run_id: str,
+    event_type: RunEventType,
+    source: RunEventSource,
+    step: int,
+    payload: dict,
+    layer: str | None = None,
+) -> RunEvent:
+    return RunEvent(
+        event_id=str(uuid.uuid4()),
+        ts_ns=time.time_ns(),
+        source=source,
+        type=event_type,
+        run_id=run_id,
+        step=step,
+        layer=layer,
+        payload=payload,
+    )
+
+
+def _find_example_input(model: torch.nn.Module) -> torch.Tensor | None:
+    for shape in ([1, 1, 28, 28], [1, 3, 32, 32], [1, 784], [1, 10]):
+        candidate = torch.rand(*shape)
+        try:
+            with torch.no_grad():
+                output = model(candidate)
+            if isinstance(output, torch.Tensor) and output.dim() == 2 and output.shape[0] == 1:
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
+def _publish_source_import_events(run_id: str, graph, layers: list[dict], checkpoint_path: Path, fingerprint: str) -> None:
+    events = [
+        _run_event(run_id, "graph", "runtime_hook", 0, {"graph": graph.model_dump()}),
+    ]
+    for layer in layers:
+        layer_id = layer.get("layer_id")
+        if isinstance(layer_id, str):
+            events.append(
+                _run_event(
+                    run_id,
+                    "layer_snapshot",
+                    "runtime_hook",
+                    1,
+                    {
+                        "activation_mean": layer.get("activation_mean"),
+                        "activation_sparsity": layer.get("activation_sparsity"),
+                        "weight_std": layer.get("weight_std"),
+                    },
+                    layer=layer_id,
+                )
+            )
+    events.extend(
+        [
+            _run_event(
+                run_id,
+                "checkpoint",
+                "checkpoint",
+                1,
+                {
+                    "path": str(checkpoint_path),
+                    "size_mb": round(checkpoint_path.stat().st_size / (1024**2), 3),
+                    "fingerprint": fingerprint,
+                },
+            ),
+            _run_event(
+                run_id,
+                "run_complete",
+                "runtime_hook",
+                1,
+                {"status": "source_imported", "run_kind": "source-import", "inference_only": True},
+            ),
+        ]
+    )
+    run_registry.publish(run_id, events)
+
+
+def _batch_like(example_input: torch.Tensor, batch_size: int) -> torch.Tensor:
+    shape = list(example_input.shape)
+    shape[0] = batch_size
+    return torch.rand(*shape)
+
+
+def _class_count(model: torch.nn.Module, example_input: torch.Tensor) -> int | None:
+    try:
+        with torch.no_grad():
+            output = model(example_input)
+    except Exception:
+        return None
+    if isinstance(output, torch.Tensor) and output.dim() == 2 and output.shape[1] > 1:
+        return int(output.shape[1])
+    return None
+
+
+def _publish_source_training_events(
+    run_id: str,
+    graph,
+    metrics: list[dict],
+    layers_by_step: list[tuple[int, list[dict]]],
+    checkpoint_path: Path,
+    fingerprint: str,
+) -> None:
+    events = [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})]
+    for metric in metrics:
+        step = int(metric["step"])
+        events.append(
+            _run_event(
+                run_id,
+                "metric",
+                "training",
+                step,
+                {
+                    "loss": metric["loss"],
+                    "accuracy": metric["accuracy"],
+                    "learning_rate": metric["learning_rate"],
+                    "phase": "train",
+                },
+            )
+        )
+        events.append(
+            _run_event(
+                run_id,
+                "infra",
+                "infra",
+                step,
+                {
+                    "device": "cpu",
+                    "step_time_ms": metric["step_time_ms"],
+                    "samples_per_sec": metric["samples_per_sec"],
+                    "memory_peak_mb": 0.0,
+                    "elapsed_sec": metric["elapsed_sec"],
+                },
+            )
+        )
+    for step, layers in layers_by_step:
+        for layer in layers:
+            layer_id = layer.get("layer_id")
+            if isinstance(layer_id, str):
+                events.append(
+                    _run_event(
+                        run_id,
+                        "layer_snapshot",
+                        "runtime_hook",
+                        step,
+                        {
+                            "activation_mean": layer.get("activation_mean"),
+                            "activation_sparsity": layer.get("activation_sparsity"),
+                            "weight_std": layer.get("weight_std"),
+                        },
+                        layer=layer_id,
+                    )
+                )
+    final_step = int(metrics[-1]["step"]) if metrics else 0
+    events.extend(
+        [
+            _run_event(
+                run_id,
+                "checkpoint",
+                "checkpoint",
+                final_step,
+                {
+                    "path": str(checkpoint_path),
+                    "size_mb": round(checkpoint_path.stat().st_size / (1024**2), 3),
+                    "fingerprint": fingerprint,
+                },
+            ),
+            _run_event(
+                run_id,
+                "run_complete",
+                "training",
+                final_step,
+                {"status": "trained", "run_kind": "source-training", "inference_only": False},
+            ),
+        ]
+    )
+    run_registry.publish(run_id, events)
+
+
+@app.post("/api/inspect/source/candidates")
+async def analyze_source_candidates(files: list[UploadFile] = File(...)):
+    collected = await _collect_source_files(files)
+    if not collected:
+        raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
+    return {"files": [path for path, _ in collected], "candidates": find_module_classes(dict(collected))}
+
+
+@app.post("/api/runs/from-source")
+async def import_run_from_source(
+    files: list[UploadFile] = File(...),
+    entry_file: str = Form(...),
+    entry_class: str = Form(...),
+):
+    """Create a replayable local run from trusted source without requiring trained weights.
+
+    This is intentionally a local/trusted path: the uploaded source is imported
+    to instantiate the nn.Module, then PulseGraph saves its initial state_dict as
+    a checkpoint so the existing replay, stream, and report surfaces all work.
+    """
+    collected = await _collect_source_files(files)
+    if not collected:
+        raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
+
+    run_id = f"source-{uuid.uuid4().hex[:12]}"
+    normalized_entry = entry_file.replace("\\", "/")
+    saved = run_store.save_source_files(run_id, collected, normalized_entry, entry_class)
+    if normalized_entry not in saved:
+        raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
+
+    source_path = run_store.source_path(run_id)
+    if source_path is None:
+        raise HTTPException(status_code=400, detail="Entry source could not be saved.")
+    model = load_model_from_source(source_path, entry_class, source_root=run_store.run_dir(run_id) / "source")
+    if model is None:
+        raise HTTPException(status_code=400, detail=f"Could not instantiate '{entry_class}' from the uploaded source.")
+    model.eval()
+
+    example_input = _find_example_input(model)
+    if example_input is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not infer a runnable input shape. Supported automatic probes include MNIST-like and small RGB classifiers.",
+        )
+
+    try:
+        forward = forward_with_model(model, example_input)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Forward probe failed: {exc}") from exc
+
+    try:
+        graph = trace_model_graph(model, example_input)
+    except Exception:
+        graph = build_graph_from_tensor_specs(
+            [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
+        )
+
+    run_store.save_config(
+        run_id,
+        {
+            "source": "uploaded-python",
+            "run_kind": "source-import",
+            "inference_only": True,
+            "training_status": "not-run",
+            "capabilities": ["forward", "stream-replay", "graph", "layer-snapshots"],
+            "entry_file": normalized_entry,
+            "entry_class": entry_class,
+            "input_shape": list(example_input.shape),
+            "weights": "initial-random",
+        },
+    )
+    run_store.save_graph(run_id, graph.model_dump())
+
+    sample = io.BytesIO()
+    torch.save({"images": example_input.detach().cpu(), "labels": torch.tensor([0])}, sample)
+    run_store.save_samples(run_id, sample.getvalue())
+
+    checkpoint = io.BytesIO()
+    torch.save(model.state_dict(), checkpoint)
+    checkpoint_path = run_store.save_checkpoint_bytes(run_id, 1, checkpoint.getvalue(), epoch=0)
+    fingerprint = fingerprint_state_dict(model.state_dict())
+    run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
+
+    _publish_source_import_events(
+        run_id,
+        graph,
+        forward["layers"],
+        checkpoint_path=checkpoint_path,
+        fingerprint=fingerprint,
+    )
+    return {
+        "run_id": run_id,
+        "run_kind": "source-import",
+        "inference_only": True,
+        "saved": saved,
+        "entry_file": normalized_entry,
+        "entry_class": entry_class,
+        "graph": graph.model_dump(),
+        "checkpoint": {"step": 1, "path": str(checkpoint_path), "fingerprint": fingerprint},
+    }
+
+
+@app.post("/api/runs/train-source")
+async def train_run_from_source(
+    files: list[UploadFile] = File(...),
+    entry_file: str = Form(...),
+    entry_class: str = Form(...),
+    steps: int = Form(8),
+):
+    collected = await _collect_source_files(files)
+    if not collected:
+        raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
+
+    run_id = f"train-{uuid.uuid4().hex[:12]}"
+    normalized_entry = entry_file.replace("\\", "/")
+    saved = run_store.save_source_files(run_id, collected, normalized_entry, entry_class)
+    if normalized_entry not in saved:
+        raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
+
+    source_path = run_store.source_path(run_id)
+    if source_path is None:
+        raise HTTPException(status_code=400, detail="Entry source could not be saved.")
+    model = load_model_from_source(source_path, entry_class, source_root=run_store.run_dir(run_id) / "source")
+    if model is None:
+        raise HTTPException(status_code=400, detail=f"Could not instantiate '{entry_class}' from the uploaded source.")
+
+    example_input = _find_example_input(model)
+    if example_input is None:
+        raise HTTPException(status_code=400, detail="Could not infer a runnable input shape for training.")
+    classes = _class_count(model, example_input)
+    if classes is None:
+        raise HTTPException(status_code=400, detail="Training requires a classifier forward output shaped [batch, classes].")
+
+    try:
+        graph = trace_model_graph(model, example_input)
+    except Exception:
+        graph = build_graph_from_tensor_specs(
+            [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
+        )
+
+    steps = max(1, min(int(steps), 50))
+    batch_size = 8
+    learning_rate = 1e-3
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    metrics: list[dict] = []
+    layers_by_step: list[tuple[int, list[dict]]] = []
+    start = time.perf_counter()
+
+    model.train()
+    for step in range(1, steps + 1):
+        images = _batch_like(example_input, batch_size)
+        labels = torch.randint(0, classes, (batch_size,))
+        step_start = time.perf_counter()
+        logits = model(images)
+        loss = loss_fn(logits, labels)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        step_time_ms = (time.perf_counter() - step_start) * 1000
+        accuracy = float((logits.argmax(dim=1) == labels).float().mean().item())
+        metrics.append(
+            {
+                "step": step,
+                "loss": round(float(loss.item()), 4),
+                "accuracy": round(accuracy, 4),
+                "learning_rate": learning_rate,
+                "step_time_ms": round(step_time_ms, 2),
+                "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
+                "elapsed_sec": round(time.perf_counter() - start, 2),
+            }
+        )
+        model.eval()
+        snapshot = forward_with_model(model, images[:1])
+        layers_by_step.append((step, snapshot["layers"]))
+        model.train()
+
+    run_store.save_config(
+        run_id,
+        {
+            "source": "uploaded-python",
+            "run_kind": "source-training",
+            "inference_only": False,
+            "training_status": "completed",
+            "training_recipe": "local-short-classifier",
+            "steps": steps,
+            "batch_size": batch_size,
+            "lr": learning_rate,
+            "entry_file": normalized_entry,
+            "entry_class": entry_class,
+            "input_shape": list(example_input.shape),
+            "classes": classes,
+            "weights": "trained",
+        },
+    )
+    run_store.save_graph(run_id, graph.model_dump())
+
+    sample = io.BytesIO()
+    torch.save({"images": _batch_like(example_input, min(16, batch_size)).detach().cpu(), "labels": torch.arange(min(16, batch_size)) % classes}, sample)
+    run_store.save_samples(run_id, sample.getvalue())
+
+    checkpoint = io.BytesIO()
+    torch.save(model.state_dict(), checkpoint)
+    checkpoint_path = run_store.save_checkpoint_bytes(run_id, steps, checkpoint.getvalue(), epoch=1)
+    fingerprint = fingerprint_state_dict(model.state_dict())
+    run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
+
+    _publish_source_training_events(run_id, graph, metrics, layers_by_step, checkpoint_path, fingerprint)
+    return {
+        "run_id": run_id,
+        "run_kind": "source-training",
+        "inference_only": False,
+        "saved": saved,
+        "entry_file": normalized_entry,
+        "entry_class": entry_class,
+        "graph": graph.model_dump(),
+        "checkpoint": {"step": steps, "path": str(checkpoint_path), "fingerprint": fingerprint},
+    }
+
+
+@app.post("/api/runs/import")
+async def import_artifact(request: Request):
+    """Create a synthetic run for a bare .pt so source can be attached and it becomes replayable."""
+    data = await request.body()
+    if len(data) > MAX_ARTIFACT_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Artifact is larger than 50 MB.")
+    try:
+        state_dict = torch.load(io.BytesIO(data), map_location="cpu", weights_only=True)
+        assert isinstance(state_dict, dict) and state_dict
+        fingerprint = fingerprint_state_dict(state_dict)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Artifact is not a loadable weights-only state dict.")
+    existing = run_store.find_run_by_fingerprint(fingerprint)
+    if existing:
+        return {"run_id": existing[0], "fingerprint": fingerprint, "created": False}
+    run_id = f"imported-{fingerprint[:12]}"
+    path = run_store.save_checkpoint_bytes(run_id, 0, data)
+    run_store.record_fingerprint(run_id, path.name, fingerprint)
+    return {"run_id": run_id, "fingerprint": fingerprint, "created": True}
+
+
+@app.post("/api/runs/{run_id}/source")
+async def attach_run_source(
+    run_id: str,
+    files: list[UploadFile] = File(...),
+    entry_file: str = Form(...),
+    entry_class: str = Form(...),
+):
+    collected = await _collect_source_files(files)
+    if not collected:
+        raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
+    saved = run_store.save_source_files(run_id, collected, entry_file.replace("\\", "/"), entry_class)
+    if entry_file not in saved:
+        raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
+
+    validation = None
+    checkpoint_path = run_store.checkpoint_path(run_id)
+    if checkpoint_path is not None:
+        source_path = run_store.source_path(run_id)
+        if source_path is not None:
+            validation = validate_source_against_checkpoint(
+                source_path, entry_class, checkpoint_path, source_root=run_store.run_dir(run_id) / "source"
+            ).as_dict()
+    return {"run_id": run_id, "saved": saved, "entry_file": entry_file, "entry_class": entry_class, "validation": validation}
+
+
+@app.get("/api/runs/{run_id}/detail")
+def get_run_detail(run_id: str) -> RunDetail:
+    detail = build_run_detail(run_store, run_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return detail
+
+
+@app.get("/api/runs/{run_id}/source")
+def get_run_source(run_id: str) -> PlainTextResponse:
+    source = run_store.load_source(run_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="This run has no recorded model source.")
+    return PlainTextResponse(source)
+
+
+@app.get("/api/runs/{run_id}/graph")
+def get_run_graph(run_id: str):
+    graph = run_store.load_graph(run_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="This run has no recorded graph.")
+    return graph
+
+
+@app.get("/api/runs/{run_id}/checkpoints")
+def list_run_checkpoints(run_id: str):
+    return run_store.list_checkpoints(run_id)
+
+
+@app.get("/api/runs/{run_id}/forward")
+def replay_run_forward(run_id: str, checkpoint_step: int = 0, index: int = 0):
+    try:
+        return run_replay_forward(run_store, run_id, checkpoint_step, index)
+    except ReplayError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+
+
+@app.get("/api/runs/{run_id}/report")
+def get_run_report(run_id: str):
+    detail = build_run_detail(run_store, run_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return build_run_report(run_store, detail)
 
 
 @app.get("/api/runs/{run_id}/stream")
@@ -89,4 +683,18 @@ async def inspect_upload(file: UploadFile = File(...)):
                 raise HTTPException(status_code=413, detail="Uploaded model file is larger than 100 MB.")
             handle.write(chunk)
         handle.flush()
-        return inspect_pt_file(Path(handle.name), display_filename=filename).model_dump()
+        if suffix.lower() == ".safetensors":
+            response = inspect_safetensors_file(Path(handle.name), display_filename=filename)
+        else:
+            response = inspect_pt_file(Path(handle.name), display_filename=filename)
+        if response.weights_fingerprint:
+            match = run_store.find_run_by_fingerprint(response.weights_fingerprint)
+            if match:
+                run_id, checkpoint_step = match
+                response.matched_run_id = run_id
+                response.warnings.insert(
+                    0,
+                    f"Weights match recorded run '{run_id}' (checkpoint step {checkpoint_step}); "
+                    "full training provenance is available.",
+                )
+        return response.model_dump()
