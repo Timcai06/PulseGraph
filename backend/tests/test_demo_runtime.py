@@ -15,7 +15,8 @@ def test_demo_forward_returns_prediction_and_layers() -> None:
     assert result.sample_index == 3
     assert result.label == 3
     assert 0 <= result.prediction <= 9
+    assert len(result.image_pixels) == 28 * 28
+    assert all(0.0 <= pixel <= 1.0 for pixel in result.image_pixels)
     assert len(result.probabilities) == 10
     assert abs(sum(result.probabilities) - 1.0) < 1e-5
     assert len(result.layers) == 5
-

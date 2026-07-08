@@ -6,6 +6,7 @@ import { ControlRail } from "./components/ControlRail";
 import { ModelGraphPanel } from "./components/ModelGraphPanel";
 import { LayerInspector } from "./components/LayerInspector";
 import { MetricChart, ProbabilityChart, type MetricPoint } from "./components/Charts";
+import { DigitPreview } from "./components/DigitPreview";
 
 const emptyGraph: ModelGraph = { nodes: [], edges: [] };
 
@@ -158,21 +159,24 @@ export default function App() {
       <section className="bottom-dock">
         <div className="metric-panel">
           <div className="panel-heading">
-            <h2>Training Pulse</h2>
+            <h2>Training Telemetry</h2>
             <span>loss, accuracy, step time</span>
           </div>
           <MetricChart points={metrics} />
         </div>
         <div className="prediction-panel">
           <div className="panel-heading">
-            <h2>Trusted Forward</h2>
+            <h2>Inference Probe</h2>
             <span>{prediction ? `label ${prediction.label} · predicted ${prediction.prediction}` : "run forward to inspect probabilities"}</span>
           </div>
-          <ProbabilityChart probabilities={prediction?.probabilities ?? Array(10).fill(0)} />
+          <div className="inference-body">
+            <DigitPreview pixels={prediction?.image_pixels} label={prediction?.label} prediction={prediction?.prediction} />
+            <ProbabilityChart probabilities={prediction?.probabilities ?? Array(10).fill(0)} />
+          </div>
         </div>
         <div className="event-panel">
           <div className="panel-heading">
-            <h2>Event Stream</h2>
+            <h2>Runtime Events</h2>
             <span>{events.length} recent events</span>
           </div>
           <div className="event-list">

@@ -93,7 +93,7 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
     <section className="graph-panel" ref={containerRef}>
       <div className="panel-heading">
         <div>
-          <h2>{viewMode === "ops" ? "Model Graph" : "Neural Network"}</h2>
+          <h2>{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</h2>
           <span>{viewMode === "ops" ? "Netron-like structure with training pulses" : "Layered neurons with activation intensity"}</span>
         </div>
         <div className="view-tabs" aria-label="graph view">

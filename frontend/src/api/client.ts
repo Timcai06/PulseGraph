@@ -57,6 +57,7 @@ export type PredictionResponse = {
   sample_index: number;
   label: number;
   prediction: number;
+  image_pixels: number[];
   probabilities: number[];
   graph: ModelGraph;
   layers: LayerSnapshot[];

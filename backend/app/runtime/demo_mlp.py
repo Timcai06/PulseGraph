@@ -123,8 +123,8 @@ def run_demo_forward(index: int = 0) -> PredictionResponse:
         sample_index=index,
         label=label,
         prediction=prediction,
+        image_pixels=[float(value) for value in image.squeeze(0).squeeze(0).flatten().tolist()],
         probabilities=[float(value) for value in probabilities.tolist()],
         graph=demo_graph(),
         layers=layers,
     )
-

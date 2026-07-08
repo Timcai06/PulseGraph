@@ -28,5 +28,8 @@ describe("buildNeuralLayers", () => {
     expect(layers[1].active).toBe(true);
     expect(layers[2].neurons).toHaveLength(3);
     expect(layers[2].neurons[1].intensity).toBeCloseTo(0.7);
+    expect(layers[2].neurons[1].strongest).toBe(true);
+    expect(layers[0].neurons[0].activationOrder).toBeLessThan(layers[1].neurons[0].activationOrder);
+    expect(layers[1].neurons[0].activationOrder).toBeLessThan(layers[2].neurons[0].activationOrder);
   });
 });

@@ -11,6 +11,8 @@ export type NeuralNeuron = {
   id: string;
   label: string;
   intensity: number;
+  activationOrder: number;
+  strongest?: boolean;
 };
 
 export type NeuralLayer = {
@@ -34,12 +36,15 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-function makeNeurons(prefix: string, count: number, intensities?: number[]) {
+function makeNeurons(prefix: string, count: number, layerIndex: number, intensities?: number[]) {
   const visibleCount = Math.max(1, Math.min(MAX_VISIBLE_NEURONS, count));
+  const maxIntensity = intensities ? Math.max(...intensities) : undefined;
   return Array.from({ length: visibleCount }, (_, index) => ({
     id: `${prefix}-${index}`,
     label: String(index),
-    intensity: clamp01(intensities?.[index] ?? 0.34 + index / Math.max(visibleCount * 3, 1))
+    intensity: clamp01(intensities?.[index] ?? 0.34 + index / Math.max(visibleCount * 3, 1)),
+    activationOrder: layerIndex * MAX_VISIBLE_NEURONS + index,
+    strongest: maxIntensity !== undefined && intensities?.[index] === maxIntensity
   }));
 }
 
@@ -57,7 +62,7 @@ export function buildNeuralLayers({ graph, probabilities, pulsedNodeId }: BuildN
       role: "input",
       sourceNodeId: inputNode.id,
       active: pulsedNodeId === inputNode.id,
-      neurons: makeNeurons("input", 8)
+      neurons: makeNeurons("input", 8, 0)
     });
   }
   if (hiddenNode) {
@@ -68,7 +73,7 @@ export function buildNeuralLayers({ graph, probabilities, pulsedNodeId }: BuildN
       role: "hidden",
       sourceNodeId: hiddenNode.id,
       active: pulsedNodeId === hiddenNode.id,
-      neurons: makeNeurons("hidden", hiddenWidth)
+      neurons: makeNeurons("hidden", hiddenWidth, 1)
     });
   }
   if (outputNode) {
@@ -79,7 +84,7 @@ export function buildNeuralLayers({ graph, probabilities, pulsedNodeId }: BuildN
       role: "output",
       sourceNodeId: outputNode.id,
       active: pulsedNodeId === outputNode.id,
-      neurons: makeNeurons("output", outputWidth, probabilities)
+      neurons: makeNeurons("output", outputWidth, 2, probabilities)
     });
   }
 
@@ -109,11 +114,22 @@ export function NeuralNetworkView({ graph, probabilities, pulsedNodeId, onSelect
   useGSAP(() => {
     if (!pulsedNodeId || reducedMotion) return;
     const target = containerRef.current?.querySelector(`[data-neural-layer="${pulsedNodeId}"]`);
-    if (!target) return;
+    const neurons = pulsedNodeId === "softmax"
+      ? containerRef.current?.querySelectorAll(".neuron")
+      : target?.querySelectorAll(".neuron");
+    if (!neurons?.length) return;
     gsap.fromTo(
-      target.querySelectorAll(".neuron"),
+      neurons,
       { scale: 0.92, opacity: 0.72 },
-      { scale: 1.08, opacity: 1, stagger: 0.025, repeat: 1, yoyo: true, duration: 0.22, ease: "power2.out" }
+      {
+        scale: 1.12,
+        opacity: 1,
+        stagger: pulsedNodeId === "softmax" ? 0.035 : 0.03,
+        repeat: 1,
+        yoyo: true,
+        duration: 0.2,
+        ease: "power2.out"
+      }
     );
   }, { dependencies: [pulsedNodeId, reducedMotion, layers.length], scope: containerRef });
 
@@ -151,6 +167,8 @@ export function NeuralNetworkView({ graph, probabilities, pulsedNodeId, onSelect
                 <span
                   className="neuron"
                   key={neuron.id}
+                  data-neuron-order={neuron.activationOrder}
+                  data-strongest={neuron.strongest ? "true" : undefined}
                   style={{ "--intensity": neuron.intensity } as React.CSSProperties}
                 >
                   {layer.role === "output" ? neuron.label : ""}

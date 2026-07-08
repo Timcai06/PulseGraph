@@ -74,6 +74,7 @@ class PredictionResponse(BaseModel):
     sample_index: int
     label: int
     prediction: int
+    image_pixels: list[float]
     probabilities: list[float]
     graph: ModelGraph
     layers: list[LayerSnapshot]
