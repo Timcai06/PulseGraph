@@ -132,6 +132,7 @@ def run_demo_forward(index: int = 0) -> PredictionResponse:
         prediction=prediction,
         weights=weights,
         sample_source=sample_source,
+        image_shape=[1, 28, 28],
         image_pixels=[float(value) for value in image.squeeze(0).squeeze(0).flatten().tolist()],
         probabilities=[float(value) for value in probabilities.tolist()],
         graph=demo_graph(),

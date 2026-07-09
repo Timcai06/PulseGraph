@@ -161,10 +161,9 @@
 .recognition-callout {
   min-height: 62px;
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  gap: 2px 12px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 3px;
   border: 1px solid rgba(34, 211, 238, 0.22);
   border-radius: var(--radius-md);
   background: rgba(8, 145, 178, 0.1);
@@ -179,14 +178,15 @@
 }
 
 .recognition-callout strong {
-  grid-row: 1 / 3;
-  grid-column: 2;
-  min-width: 48px;
+  min-width: 0;
+  max-width: 100%;
   color: var(--cyan);
   font-family: var(--font-mono);
-  font-size: 34px;
+  font-size: 30px;
   line-height: 1;
-  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .source-badge {
@@ -259,55 +259,37 @@
   font-size: 11px;
 }
 
-.digit-preview {
-  display: grid;
-  gap: 10px;
-  justify-items: center;
-}
-
-.digit-grid {
+.image-preview {
   position: relative;
   width: 154px;
   height: 154px;
   display: grid;
-  grid-template-columns: repeat(28, 1fr);
-  grid-template-rows: repeat(28, 1fr);
-  gap: 1px;
+  place-items: center;
   padding: 4px;
   border: 1px solid rgba(56, 189, 248, 0.34);
   border-radius: var(--radius-sm);
   background: rgba(2, 6, 23, 0.72);
   box-shadow: inset 0 0 24px rgba(14, 165, 233, 0.1);
+  overflow: hidden;
 }
 
-.digit-grid.generic {
-  place-items: center;
-  display: grid;
+.image-preview canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
-.digit-grid.generic .digit-pixel {
-  display: none;
+.image-preview-mini {
+  width: 56px;
+  height: 56px;
+  padding: 2px;
 }
 
-.generic-sample {
-  display: grid;
-  gap: 4px;
-  place-items: center;
+.image-preview-empty {
   color: var(--text-muted);
-  font-size: 11px;
-  text-transform: uppercase;
-}
-
-.generic-sample strong {
-  color: var(--cyan);
   font-family: var(--font-mono);
-  font-size: 18px;
-}
-
-.digit-pixel {
-  --pixel: 0;
-  border-radius: 1px;
-  background: rgba(236, 254, 255, calc(0.08 + var(--pixel) * 0.9));
+  font-size: 14px;
 }
 
 .event-list {

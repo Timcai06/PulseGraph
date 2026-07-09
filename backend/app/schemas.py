@@ -78,6 +78,8 @@ class PredictionResponse(BaseModel):
     prediction: int
     weights: Literal["trained", "random"] = "random"
     sample_source: Literal["mnist", "synthetic", "probe"] = "synthetic"
+    class_names: list[str] | None = None
+    image_shape: list[int] = Field(default_factory=list)
     image_pixels: list[float]
     probabilities: list[float]
     graph: ModelGraph

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appSource from "./App.tsx?raw";
 import controlRailSource from "./components/ControlRail.tsx?raw";
-import digitPreviewSource from "./components/DigitPreview.tsx?raw";
+import imagePreviewSource from "./components/ImagePreview.tsx?raw";
 import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
 import chartsSource from "./components/Charts.tsx?raw";
@@ -12,7 +12,7 @@ describe("App workspace layout", () => {
   });
 
   it("keeps the monitor free of explanatory demo copy", () => {
-    const combined = [appSource, controlRailSource, inferenceProbeSource, digitPreviewSource, modelGraphSource].join("\n");
+    const combined = [appSource, controlRailSource, inferenceProbeSource, imagePreviewSource, modelGraphSource].join("\n");
 
     expect(combined).not.toContain("Netron-like structure with training pulses");
     expect(combined).not.toContain("Upload source, then run forward or train a short local recipe.");
@@ -46,11 +46,12 @@ describe("App workspace layout", () => {
     expect(controlRailSource).not.toContain("Weights File");
   });
 
-  it("labels inference by data source instead of pretending every probe is recognition", () => {
+  it("keeps inference source badges while showing class-name results", () => {
     expect(inferenceProbeSource).toContain("sourceBadge");
     expect(inferenceProbeSource).toContain("Synthetic probe");
-    expect(inferenceProbeSource).toContain("Probe output");
     expect(inferenceProbeSource).toContain("Recognized");
+    expect(inferenceProbeSource).toContain("displayClassName");
+    expect(inferenceProbeSource).toContain("ImagePreview");
   });
 
   it("makes training steps configurable from the main workflow", () => {

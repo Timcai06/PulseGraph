@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import { chartPalette, withAlpha, type Theme } from "../lib/chartTheme";
+import { chartProbabilityRows } from "../lib/inferenceView";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import type { MetricPoint, StreamStatus } from "../hooks/useRunStream";
 
@@ -139,14 +140,15 @@ type ProbabilityProps = {
   probabilities: number[];
   label?: number;
   prediction?: number;
+  classNames?: string[] | null;
   theme?: Theme;
 };
 
-export function ProbabilityChart({ probabilities, label, prediction, theme = "dark" }: ProbabilityProps) {
+export function ProbabilityChart({ probabilities, label, prediction, classNames, theme = "dark" }: ProbabilityProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useChart(ref);
   const reducedMotion = useReducedMotion();
-  const labels = useMemo(() => probabilities.map((_, index) => index), [probabilities]);
+  const rows = useMemo(() => chartProbabilityRows(probabilities, classNames), [classNames, probabilities]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -165,8 +167,8 @@ export function ProbabilityChart({ probabilities, label, prediction, theme = "da
         grid: { left: 32, right: 12, top: 20, bottom: 30 },
         xAxis: {
           type: "category",
-          data: labels,
-          axisLabel: { color: palette.text },
+          data: rows.map((row) => row.label),
+          axisLabel: { color: palette.text, hideOverlap: true },
           axisLine: { lineStyle: { color: palette.grid } }
         },
         yAxis: {
@@ -178,7 +180,7 @@ export function ProbabilityChart({ probabilities, label, prediction, theme = "da
         series: [
           {
             type: "bar",
-            data: probabilities.map((value, index) => ({ value, itemStyle: { color: colorFor(index) } })),
+            data: rows.map((row) => ({ value: row.value, itemStyle: { color: colorFor(row.index) } })),
             barCategoryGap: "28%"
           }
         ],
@@ -187,7 +189,7 @@ export function ProbabilityChart({ probabilities, label, prediction, theme = "da
       },
       { notMerge: true }
     );
-  }, [chartRef, labels, probabilities, label, prediction, reducedMotion, theme]);
+  }, [chartRef, rows, label, prediction, reducedMotion, theme]);
 
   return <div className="prob-chart" ref={ref} />;
 }

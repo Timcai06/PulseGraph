@@ -23,7 +23,7 @@ from app.inspector.graph_builder import build_graph_from_tensor_specs
 from app.inspector.pt_inspector import inspect_pt_file
 from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
-from app.resources.contract import ResourceContractError, load_training_resource
+from app.resources.contract import ResourceContractError, load_training_resource, model_input_from_sample
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
 from app.reports.analyzer import build_run_report
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
@@ -447,7 +447,7 @@ def _run_source_training_job(
 
 
 def _as_model_input(sample: torch.Tensor) -> torch.Tensor:
-    return sample.unsqueeze(0) if sample.dim() == 1 else sample
+    return model_input_from_sample(sample)
 
 
 def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, torch.Tensor, str]:
@@ -540,6 +540,7 @@ def _run_resource_training_job(
             "entry_class": run_store.load_entry_class(run_id),
             "input_shape": resource.input_shape,
             "classes": resource.classes,
+            "class_names": resource.class_names,
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
             "weights": "trained",
@@ -625,6 +626,7 @@ async def train_run_from_resource(
             "entry_class": "TrainingResource",
             "input_shape": resource.input_shape,
             "classes": resource.classes,
+            "class_names": resource.class_names,
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
             "weights": "training",
@@ -640,6 +642,7 @@ async def train_run_from_resource(
             "name": resource.name,
             "input_shape": resource.input_shape,
             "classes": resource.classes,
+            "class_names": resource.class_names,
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
         },
@@ -719,6 +722,7 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
             "name": resource.name,
             "input_shape": resource.input_shape,
             "classes": resource.classes,
+            "class_names": resource.class_names,
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
         },

@@ -34,6 +34,11 @@ class LoadedTrainingResource:
         return int(value) if value is not None else None
 
     @property
+    def class_names(self) -> list[str] | None:
+        value = self.metadata.get("class_names")
+        return list(value) if isinstance(value, list) else None
+
+    @property
     def input_shape(self) -> list[int] | None:
         value = self.metadata.get("input_shape")
         if not isinstance(value, (list, tuple)):
@@ -90,7 +95,61 @@ class LoadedTrainingResource:
             image, label = _synthetic_sample(self.input_shape or [1, 28, 28], self.classes or 10, index)
         if not isinstance(image, torch.Tensor):
             raise ResourceContractError("inference_sample() must return a Tensor image.")
+        image_shape_from_sample(image, self.input_shape)
         return image.float(), int(label)
+
+
+def _shape_numel(shape: list[int]) -> int:
+    total = 1
+    for dim in shape:
+        total *= int(dim)
+    return total
+
+
+def image_shape_from_sample(sample: torch.Tensor, declared_shape: list[int] | None = None) -> list[int]:
+    """Return display shape [C,H,W] for an inference sample."""
+    shape = [int(dim) for dim in sample.shape]
+    declared = [int(dim) for dim in declared_shape] if declared_shape else None
+    numel = int(sample.numel())
+
+    if declared and len(declared) == 3 and _shape_numel(declared) == numel:
+        image_shape = declared
+    elif len(shape) == 4 and shape[0] == 1:
+        image_shape = shape[1:]
+    elif len(shape) == 3:
+        image_shape = shape
+    elif len(shape) == 2:
+        image_shape = [1, shape[0], shape[1]]
+    elif len(shape) == 1:
+        image_shape = [1, 1, shape[0]]
+    else:
+        raise ResourceContractError("inference_sample() image must be reshapeable to [C,H,W].")
+
+    if len(image_shape) != 3 or image_shape[0] not in {1, 3} or image_shape[1] <= 0 or image_shape[2] <= 0:
+        raise ResourceContractError("inference_sample() image must be reshapeable to [C,H,W] with C in {1,3}.")
+    if _shape_numel(image_shape) != numel:
+        raise ResourceContractError("inference_sample() image shape does not match the returned tensor size.")
+    return image_shape
+
+
+def model_input_from_sample(sample: torch.Tensor) -> torch.Tensor:
+    """Return a batched tensor for model execution without changing legacy 2D inputs."""
+    if sample.dim() == 3:
+        return sample.unsqueeze(0)
+    if sample.dim() == 1:
+        return sample.unsqueeze(0)
+    return sample
+
+
+def _validate_class_names(metadata: dict[str, Any], classes: int) -> None:
+    raw = metadata.get("class_names")
+    if raw is None:
+        return
+    if not isinstance(raw, (list, tuple)) or not all(isinstance(item, str) for item in raw):
+        raise ResourceContractError("metadata()['class_names'] must be a list[str].")
+    if len(raw) != classes:
+        raise ResourceContractError("metadata()['class_names'] length must equal classes.")
+    metadata["class_names"] = list(raw)
 
 
 def _discover_entry_class(module: Any) -> str | None:
@@ -225,21 +284,16 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
         sample, _ = resource.inference_sample(0)
     else:
         sample = _probe_sample_for_model(model)
-    if sample.dim() == 1:
-        sample = sample.unsqueeze(0)
+    image_shape = image_shape_from_sample(sample, resource.input_shape)
+    model_sample = model_input_from_sample(sample)
     with torch.no_grad():
-        output = model(sample)
+        output = model(model_sample)
     if not isinstance(output, torch.Tensor) or output.dim() != 2:
         raise ResourceContractError("build_model()(inference_sample()[0]) must return [batch, classes].")
     resource.metadata.setdefault("classes", int(output.shape[1]))
-    raw_shape = metadata.get("input_shape")
-    if isinstance(raw_shape, (list, tuple)):
-        input_shape = [int(dim) for dim in raw_shape]
-        if input_shape == list(sample.shape) and len(input_shape) > 1:
-            input_shape = input_shape[1:]
-    else:
-        input_shape = list(sample.shape[1:]) if sample.dim() > 1 else list(sample.shape)
-    resource.metadata["input_shape"] = input_shape
+    resource.metadata["classes"] = int(resource.metadata["classes"])
+    _validate_class_names(resource.metadata, int(resource.metadata["classes"]))
+    resource.metadata["input_shape"] = image_shape
     if entry_class and _is_mnist_classifier(resource.input_shape, resource.classes) and _mnist_available():
         resource.metadata["data_source"] = "mnist"
         resource.metadata["sample_source"] = "mnist"

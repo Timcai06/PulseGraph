@@ -6,7 +6,7 @@ from app.events.run_registry import run_registry
 from app.events.run_store import RunStore
 from app.inspector.graph_builder import build_inferred_graph
 from app.inspector.pt_inspector import summarize_tensor
-from app.resources.contract import ResourceContractError, load_training_resource
+from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource
 from app.runtime import mnist_data
 from app.runtime.model_loader import forward_with_model, load_model_and_weights
 from app.schemas import LayerSnapshot, ModelGraph, PredictionResponse, RunDetail
@@ -106,6 +106,8 @@ def run_replay_forward(store: RunStore, run_id: str, checkpoint_step: int = 0, i
         prediction=result["prediction"],
         weights="random" if config.get("weights") == "initial-random" or config.get("inference_only") is True else "trained",
         sample_source=sample_source if sample_source in {"probe", "mnist", "synthetic"} else "synthetic",
+        class_names=config.get("class_names") if isinstance(config.get("class_names"), list) else None,
+        image_shape=image_shape_from_sample(image, config.get("input_shape") if isinstance(config.get("input_shape"), list) else None),
         image_pixels=[float(value) for value in image.flatten().tolist()],
         probabilities=result["probabilities"],
         graph=_run_graph(store, run_id, checkpoint_path),

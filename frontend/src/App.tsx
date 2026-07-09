@@ -26,6 +26,7 @@ import type { Theme } from "./lib/chartTheme";
 import type { ForwardTarget } from "./lib/forwardTarget";
 import { describeForwardTarget, resolveForwardTarget } from "./lib/forwardTarget";
 import { firstDisplayNode } from "./lib/graphView";
+import { displayClassName } from "./lib/inferenceView";
 import { splitRunBuckets } from "./lib/runViews";
 
 gsap.registerPlugin(useGSAP);
@@ -55,6 +56,7 @@ export type LoadedResourceSummary = {
   fileCount: number;
   inputShape?: number[];
   classes?: number;
+  classNames?: string[];
   dataSource?: string;
 };
 
@@ -209,6 +211,7 @@ export default function App() {
           fileCount: preview.files.length,
           inputShape: preview.resource.input_shape ?? undefined,
           classes: preview.resource.classes ?? undefined,
+          classNames: preview.resource.class_names ?? undefined,
           dataSource: preview.resource.data_source ?? undefined
         }
       });
@@ -333,7 +336,7 @@ export default function App() {
   };
 
   const predictionSummary = prediction
-    ? `${prediction.prediction} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
+    ? `${displayClassName(prediction.prediction, prediction.class_names)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
     : "";
 
   return (

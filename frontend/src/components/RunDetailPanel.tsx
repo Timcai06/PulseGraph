@@ -5,6 +5,7 @@ import { useGSAP } from "@gsap/react";
 import type { PredictionResponse, RunDetail, RunReport } from "../api/client";
 import { getRunDetail, getRunReport, runForward } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { ImagePreview } from "./ImagePreview";
 import { SourceAttach } from "./SourceAttach";
 
 gsap.registerPlugin(useGSAP);
@@ -22,17 +23,6 @@ type Props = {
 
 function severityClass(severity: string) {
   return severity === "critical" ? "critical" : severity === "warning" ? "warning" : "info";
-}
-
-function MiniDigit({ pixels }: { pixels?: number[] }) {
-  if (!pixels || pixels.length !== 784) return null;
-  return (
-    <span className="mini-digit" aria-hidden="true">
-      {pixels.map((value, index) => (
-        <i key={index} style={{ opacity: Math.max(0.06, Math.min(1, value)) }} />
-      ))}
-    </span>
-  );
 }
 
 export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose, onPrediction }: Props) {
@@ -332,7 +322,7 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                         <div className="misclassified">
                           {report.error_analysis.misclassified.map((sample) => (
                             <div className="missample" key={sample.index}>
-                              <MiniDigit pixels={sample.pixels} />
+                              <ImagePreview pixels={sample.pixels} size="mini" />
                               <span>
                                 {sample.label} → {sample.prediction}
                               </span>

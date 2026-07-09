@@ -45,6 +45,52 @@ RESOURCE_SOURCE = textwrap.dedent(
     """
 )
 
+RGB_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    def metadata():
+        return {
+            "name": "rgb_resource",
+            "classes": 3,
+            "class_names": ["red", "green", "blue"],
+            "input_shape": [3, 2, 2],
+            "batch_size": 4,
+        }
+
+
+    def build_model():
+        return nn.Sequential(nn.Flatten(), nn.Linear(12, 3))
+
+
+    def train_batch(step, batch_size):
+        images = torch.zeros(batch_size, 3, 2, 2)
+        labels = torch.arange(batch_size) % 3
+        for row, label in enumerate(labels):
+            images[row, label, :, :] = 1.0
+        return images, labels
+
+
+    def inference_sample(index):
+        image = torch.zeros(3, 2, 2)
+        label = index % 3
+        image[label, :, :] = 1.0
+        return image, label
+    """
+)
+
+BAD_CLASS_NAMES_SOURCE = RGB_RESOURCE_SOURCE.replace(
+    '"class_names": ["red", "green", "blue"]',
+    '"class_names": ["red", "green"]',
+)
+
+BAD_IMAGE_SHAPE_SOURCE = RGB_RESOURCE_SOURCE.replace(
+    "image = torch.zeros(3, 2, 2)",
+    "image = torch.zeros(2, 2, 2)",
+)
+
 ORDINARY_MODULE_SOURCE = textwrap.dedent(
     """
     import torch
@@ -74,7 +120,7 @@ def test_training_resource_contract_loads_model_batches_and_samples(tmp_path) ->
     resource = load_training_resource(resource_path)
 
     assert resource.metadata["name"] == "tiny_resource"
-    assert resource.input_shape == [4]
+    assert resource.input_shape == [1, 1, 4]
     assert resource.classes == 3
     assert resource.build_model().__class__.__name__ == "Linear"
     images, labels = resource.train_batch(step=2, batch_size=5)
@@ -83,6 +129,36 @@ def test_training_resource_contract_loads_model_batches_and_samples(tmp_path) ->
     sample, label = resource.inference_sample(index=2)
     assert list(sample.shape) == [1, 4]
     assert label == 2
+
+
+def test_training_resource_accepts_named_rgb_image_resource(tmp_path) -> None:
+    resource_path = tmp_path / "resource.py"
+    resource_path.write_text(RGB_RESOURCE_SOURCE, encoding="utf-8")
+
+    resource = load_training_resource(resource_path)
+
+    assert resource.input_shape == [3, 2, 2]
+    assert resource.classes == 3
+    assert resource.metadata["class_names"] == ["red", "green", "blue"]
+    sample, label = resource.inference_sample(index=1)
+    assert list(sample.shape) == [3, 2, 2]
+    assert label == 1
+
+
+def test_training_resource_rejects_class_name_count_mismatch(tmp_path) -> None:
+    resource_path = tmp_path / "resource.py"
+    resource_path.write_text(BAD_CLASS_NAMES_SOURCE, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="class_names"):
+        load_training_resource(resource_path)
+
+
+def test_training_resource_rejects_non_image_sample_shape(tmp_path) -> None:
+    resource_path = tmp_path / "resource.py"
+    resource_path.write_text(BAD_IMAGE_SHAPE_SOURCE, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="C,H,W"):
+        load_training_resource(resource_path)
 
 
 def test_plain_nn_module_source_is_adapted_as_training_resource(monkeypatch, tmp_path) -> None:
@@ -146,6 +222,37 @@ def test_train_resource_endpoint_creates_run_and_forward_replay() -> None:
     forward = client.get(f"/api/runs/{run_id}/forward?index=1").json()
     assert forward["label"] == 1
     assert len(forward["probabilities"]) == 3
+
+
+def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None:
+    preview = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.py", RGB_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py"},
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["resource"]["class_names"] == ["red", "green", "blue"]
+    assert preview.json()["resource"]["input_shape"] == [3, 2, 2]
+
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", RGB_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "2"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    run_id = payload["run_id"]
+    assert payload["resource"]["class_names"] == ["red", "green", "blue"]
+
+    detail = client.get(f"/api/runs/{run_id}/detail").json()
+    assert detail["config"]["class_names"] == ["red", "green", "blue"]
+
+    forward = client.get(f"/api/runs/{run_id}/forward?index=2").json()
+    assert forward["class_names"] == ["red", "green", "blue"]
+    assert forward["image_shape"] == [3, 2, 2]
+    assert len(forward["image_pixels"]) == 12
 
 
 def test_train_resource_endpoint_respects_telemetry_stride() -> None:

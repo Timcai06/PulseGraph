@@ -61,6 +61,8 @@ export type PredictionResponse = {
   prediction: number;
   weights: "trained" | "random";
   sample_source: "mnist" | "synthetic" | "probe";
+  class_names?: string[] | null;
+  image_shape: number[];
   image_pixels: number[];
   probabilities: number[];
   graph: ModelGraph;
@@ -223,6 +225,7 @@ export type SourceImportResult = {
     name: string;
     input_shape?: number[] | null;
     classes?: number | null;
+    class_names?: string[] | null;
     data_source?: string | null;
     sample_source?: PredictionResponse["sample_source"] | null;
   } | null;
@@ -242,6 +245,7 @@ export type ResourcePreviewInfo = {
   name: string;
   input_shape?: number[] | null;
   classes?: number | null;
+  class_names?: string[] | null;
   data_source?: string | null;
   sample_source?: string | null;
 };

@@ -360,22 +360,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.mini-digit {
-  width: 56px;
-  height: 56px;
-  display: grid;
-  grid-template-columns: repeat(28, 1fr);
-  grid-template-rows: repeat(28, 1fr);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: #020617;
-  overflow: hidden;
-}
-
-.mini-digit i {
-  background: #ecfeff;
-}
-
 .origin-tag {
   margin-left: 8px;
   font-style: normal;
