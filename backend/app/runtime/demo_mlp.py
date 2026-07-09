@@ -7,6 +7,7 @@ import torch
 from torch import nn
 
 from app.inspector.fx_tracer import trace_model_graph
+from app.runtime.inference_output import classification_output
 from app.runtime.mnist_data import load_test_samples, test_sample_indices_by_digit, trained_model_path
 from app.schemas import GraphEdge, GraphNode, LayerSnapshot, ModelGraph, PredictionResponse
 
@@ -118,6 +119,7 @@ def run_demo_forward(index: int = 0) -> PredictionResponse:
     with torch.no_grad():
         steps = model.forward_steps(image)
     probabilities = steps["softmax"].squeeze(0)
+    probability_values = [float(value) for value in probabilities.tolist()]
     prediction = int(probabilities.argmax().item())
     layers = [
         _snapshot("flatten", steps["flatten"], [1, 28, 28]),
@@ -127,6 +129,8 @@ def run_demo_forward(index: int = 0) -> PredictionResponse:
         _snapshot("softmax", steps["softmax"], [10]),
     ]
     return PredictionResponse(
+        task="classification",
+        output=classification_output(label=label, prediction=prediction, probabilities=probability_values),
         sample_index=index,
         label=label,
         prediction=prediction,
@@ -134,7 +138,7 @@ def run_demo_forward(index: int = 0) -> PredictionResponse:
         sample_source=sample_source,
         image_shape=[1, 28, 28],
         image_pixels=[float(value) for value in image.squeeze(0).squeeze(0).flatten().tolist()],
-        probabilities=[float(value) for value in probabilities.tolist()],
+        probabilities=probability_values,
         graph=demo_graph(),
         layers=layers,
     )

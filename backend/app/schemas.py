@@ -73,6 +73,8 @@ class LayerSnapshot(BaseModel):
 
 
 class PredictionResponse(BaseModel):
+    task: str = "classification"
+    output: dict[str, Any] = Field(default_factory=dict)
     sample_index: int
     label: int
     prediction: int

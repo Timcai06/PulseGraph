@@ -39,7 +39,7 @@ FastAPI controlled training runtime
 Run archive: source + config + graph + metrics + events + checkpoints + samples
         |
         v
-React dashboard: Operator Graph + Training Telemetry + Runtime Events + Recognition Result
+React dashboard: Operator Graph + Training Telemetry + Runtime Events + Inference Output
         |
         v
 History, replay, inference, and report
@@ -61,7 +61,7 @@ The dashboard currently focuses on one main user path:
 - **Real training loop**: runs local PyTorch optimization on CPU and records loss, accuracy, step time, throughput, layer snapshots, and checkpoint metadata.
 - **Telemetry stride**: separates training granularity from visualization granularity. For example, train 100 steps but record chart points every 5 steps.
 - **Operator Graph**: traces model structure with `torch.fx` when possible, with tensor/state-dict fallback when tracing is unavailable.
-- **Recognition Result**: shows inference output from real dataset samples, resource-provided samples, or synthetic probes without pretending all outputs are real recognition.
+- **Inference Output**: renders task-aware model outputs from real dataset samples, resource-provided samples, or synthetic probes. Classification keeps the rich top-prediction and probability chart view while the contract can grow toward other vision tasks.
 - **Runtime Events**: streams graph, metric, infra, layer snapshot, checkpoint, and completion events through SSE.
 - **History**: persists runs locally, reopens recorded runs, and supports deleting local history records.
 - **Reports**: builds a basic run report with metrics, checkpoint timeline, sample provenance, and rule-based diagnosis signals.

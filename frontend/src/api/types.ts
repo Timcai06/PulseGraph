@@ -55,7 +55,25 @@ export type LayerSnapshot = {
   weight_std?: number | null;
 };
 
+export type ClassificationOutput = {
+  kind: "classification";
+  label?: number;
+  prediction: number;
+  confidence?: number;
+  probabilities: number[];
+  class_names?: string[] | null;
+};
+
+export type StructuredInferenceOutput = {
+  kind: string;
+  [key: string]: unknown;
+};
+
+export type InferenceOutput = ClassificationOutput | StructuredInferenceOutput;
+
 export type PredictionResponse = {
+  task?: string | null;
+  output?: InferenceOutput | null;
   sample_index: number;
   label: number;
   prediction: number;

@@ -30,7 +30,7 @@ import type { ForwardTarget } from "./lib/forwardTarget";
 import { describeForwardTarget, resolveForwardTarget } from "./lib/forwardTarget";
 import { firstDisplayNode } from "./lib/graphView";
 import type { GhostEdge } from "./lib/graphPorts";
-import { displayClassName } from "./lib/inferenceView";
+import { displayClassName, inferenceOutputKind } from "./lib/inferenceView";
 import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
 import {
@@ -393,8 +393,11 @@ export default function App() {
     loadDemoGraph();
   };
 
+  const predictionKind = prediction ? inferenceOutputKind(prediction) : "";
   const predictionSummary = prediction
-    ? `${displayClassName(prediction.prediction, prediction.class_names)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
+    ? predictionKind === "classification"
+      ? `${displayClassName(prediction.prediction, prediction.class_names)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
+      : `${predictionKind} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
     : "";
   const loopStages = useMemo(
     () =>
@@ -564,7 +567,7 @@ export default function App() {
               </div>
               <div className="prediction-panel">
                 <div className="panel-heading">
-                  <h2>Recognition Result</h2>
+                  <h2>Inference Output</h2>
                   <span>{predictionSummary}</span>
                 </div>
                 <InferenceProbe prediction={prediction} theme={theme} />

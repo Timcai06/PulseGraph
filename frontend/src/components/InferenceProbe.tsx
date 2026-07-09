@@ -1,5 +1,11 @@
 import type { PredictionResponse } from "../api/client";
-import { displayClassName, topProbabilityRows } from "../lib/inferenceView";
+import {
+  classificationOutputFromPrediction,
+  displayClassName,
+  inferenceOutputKind,
+  structuredOutputRows,
+  topProbabilityRows
+} from "../lib/inferenceView";
 import { ProbabilityChart } from "./Charts";
 import { ImagePreview } from "./ImagePreview";
 
@@ -16,23 +22,26 @@ function sourceBadge(source?: PredictionResponse["sample_source"]) {
 }
 
 export function InferenceProbe({ prediction, theme = "dark" }: Props) {
-  const probabilities = prediction?.probabilities ?? [];
-  const classNames = prediction?.class_names;
+  const classification = classificationOutputFromPrediction(prediction);
+  const probabilities = classification?.probabilities ?? [];
+  const classNames = classification?.classNames;
   const top = topProbabilityRows(probabilities, classNames);
-  const confidence = top[0]?.value ?? 0;
-  const predictionLabel = prediction ? displayClassName(prediction.prediction, classNames) : "";
+  const confidence = classification?.confidence ?? top[0]?.value ?? 0;
+  const predictionLabel = classification ? displayClassName(classification.prediction, classNames) : "";
+  const outputKind = prediction ? inferenceOutputKind(prediction) : "classification";
+  const structuredRows = prediction && !classification ? structuredOutputRows(prediction.output) : [];
 
   return (
     <div className="inference-body">
-      <div className="recognition-image">
-        <span>Image</span>
+      <div className="inference-image recognition-image">
+        <span>Input</span>
         <ImagePreview pixels={prediction?.image_pixels} imageShape={prediction?.image_shape} />
       </div>
       <div className="inference-result">
-        {prediction ? (
+        {prediction && classification ? (
           <>
-            <div className="recognition-callout">
-              <span>Recognized</span>
+            <div className="classification-output recognition-callout">
+              <span>Top Prediction</span>
               <strong>{predictionLabel}</strong>
               <em>{(confidence * 100).toFixed(1)}% confidence</em>
             </div>
@@ -47,16 +56,35 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
               ))}
             </div>
           </>
+        ) : prediction ? (
+          <div className="structured-output">
+            <span className="output-kind">{outputKind}</span>
+            <strong>Structured Output</strong>
+            {structuredRows.length ? (
+              <dl>
+                {structuredRows.map((row) => (
+                  <div key={row.key}>
+                    <dt>{row.key}</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="empty-hint">No fields</p>
+            )}
+          </div>
         ) : (
-          <p className="empty-hint">No result</p>
+          <p className="empty-hint">No output</p>
         )}
-        <ProbabilityChart
-          probabilities={probabilities.length ? probabilities : Array(10).fill(0)}
-          label={prediction?.label}
-          prediction={prediction?.prediction}
-          classNames={classNames}
-          theme={theme}
-        />
+        {(classification || !prediction) && (
+          <ProbabilityChart
+            probabilities={probabilities.length ? probabilities : Array(10).fill(0)}
+            label={classification?.label ?? prediction?.label}
+            prediction={classification?.prediction ?? prediction?.prediction}
+            classNames={classNames}
+            theme={theme}
+          />
+        )}
       </div>
     </div>
   );

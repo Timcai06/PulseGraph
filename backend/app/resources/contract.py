@@ -39,6 +39,10 @@ class LoadedTrainingResource:
         return list(value) if isinstance(value, list) else None
 
     @property
+    def task(self) -> str:
+        return str(self.metadata.get("task") or "classification")
+
+    @property
     def input_shape(self) -> list[int] | None:
         value = self.metadata.get("input_shape")
         if not isinstance(value, (list, tuple)):
@@ -292,6 +296,9 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
         raise ResourceContractError("build_model()(inference_sample()[0]) must return [batch, classes].")
     resource.metadata.setdefault("classes", int(output.shape[1]))
     resource.metadata["classes"] = int(resource.metadata["classes"])
+    resource.metadata.setdefault("task", "classification")
+    if resource.task != "classification":
+        raise ResourceContractError("The current training resource runtime supports task='classification'.")
     _validate_class_names(resource.metadata, int(resource.metadata["classes"]))
     resource.metadata["input_shape"] = image_shape
     if entry_class and _is_mnist_classifier(resource.input_shape, resource.classes) and _mnist_available():

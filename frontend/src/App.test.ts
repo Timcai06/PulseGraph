@@ -20,6 +20,7 @@ import graphTopologySource from "./lib/graphTopology.ts?raw";
 import graphPortsSource from "./lib/graphPorts.ts?raw";
 import graphStylesSource from "./styles/modules/graph.css?raw";
 import panelStylesSource from "./styles/modules/panels.css?raw";
+import apiTypesSource from "./api/types.ts?raw";
 
 describe("App workspace layout", () => {
   it("keeps layer details out of the control rail", () => {
@@ -64,12 +65,19 @@ describe("App workspace layout", () => {
     expect(controlRailSource).not.toContain("Weights File");
   });
 
-  it("keeps inference source badges while showing class-name results", () => {
+  it("keeps inference source badges while showing task-neutral classification output", () => {
+    expect(appSource).toContain("Inference Output");
+    expect(appSource).not.toContain("Recognition Result");
+    expect(apiTypesSource).toContain("InferenceOutput");
+    expect(apiTypesSource).toContain("task?:");
+    expect(apiTypesSource).toContain("output?:");
     expect(inferenceProbeSource).toContain("sourceBadge");
     expect(inferenceProbeSource).toContain("Synthetic probe");
-    expect(inferenceProbeSource).toContain("Recognized");
+    expect(inferenceProbeSource).toContain("Top Prediction");
+    expect(inferenceProbeSource).not.toContain("Recognized");
     expect(inferenceProbeSource).toContain("displayClassName");
     expect(inferenceProbeSource).toContain("ImagePreview");
+    expect(inferenceProbeSource).toContain("classification-output");
   });
 
   it("shows resource preview samples and named report mistakes", () => {

@@ -420,6 +420,7 @@ def _run_source_training_job(
         {
             "source": "uploaded-python",
             "run_kind": "source-training",
+            "task": "classification",
             "inference_only": False,
             "training_status": "completed",
             "training_recipe": "local-short-classifier",
@@ -464,6 +465,7 @@ def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIM
     for index in range(limit):
         image, label = resource.inference_sample(index)
         image_shape = image_shape_from_sample(image, resource.input_shape)
+        display_image = image[0] if image.dim() == 4 and image.shape[0] == 1 else image
         samples.append(
             ImageSample(
                 index=index,
@@ -471,7 +473,7 @@ def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIM
                 label_name=_class_name(class_names, label),
                 sample_source=resource.sample_source if resource.sample_source in {"mnist", "synthetic", "probe"} else "probe",
                 image_shape=image_shape,
-                image_pixels=[float(value) for value in image.flatten().tolist()],
+                image_pixels=[float(value) for value in display_image.flatten().tolist()],
             )
         )
     return samples
@@ -556,6 +558,7 @@ def _run_resource_training_job(
             "source": "training-resource",
             "run_kind": "resource-training",
             "resource_name": resource.name,
+            "task": resource.task,
             "inference_only": False,
             "training_status": "completed",
             "training_recipe": "resource-contract",
@@ -642,6 +645,7 @@ async def train_run_from_resource(
             "source": "training-resource",
             "run_kind": "resource-training",
             "resource_name": resource.name,
+            "task": resource.task,
             "inference_only": False,
             "training_status": "running",
             "training_recipe": "resource-contract",
@@ -667,6 +671,7 @@ async def train_run_from_resource(
         "run_kind": "resource-training",
         "resource": {
             "name": resource.name,
+            "task": resource.task,
             "input_shape": resource.input_shape,
             "classes": resource.classes,
             "class_names": resource.class_names,
@@ -748,6 +753,7 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
     return {
         "resource": {
             "name": resource.name,
+            "task": resource.task,
             "input_shape": resource.input_shape,
             "classes": resource.classes,
             "class_names": resource.class_names,
@@ -815,6 +821,7 @@ async def import_run_from_source(
         {
             "source": "uploaded-python",
             "run_kind": "source-import",
+            "task": "classification",
             "inference_only": True,
             "training_status": "not-run",
             "capabilities": ["forward", "stream-replay", "graph", "layer-snapshots"],
@@ -900,6 +907,7 @@ async def train_run_from_source(
         {
             "source": "uploaded-python",
             "run_kind": "source-training",
+            "task": "classification",
             "inference_only": False,
             "training_status": "running",
             "training_recipe": "local-short-classifier",

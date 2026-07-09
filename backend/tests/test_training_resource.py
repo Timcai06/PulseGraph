@@ -262,9 +262,14 @@ def test_train_resource_endpoint_creates_run_and_forward_replay() -> None:
     detail = client.get(f"/api/runs/{run_id}/detail").json()
     assert detail["config"]["run_kind"] == "resource-training"
     assert detail["config"]["resource_name"] == "tiny_resource"
+    assert detail["config"]["task"] == "classification"
     assert len(detail["metrics"]) >= 2
 
     forward = client.get(f"/api/runs/{run_id}/forward?index=1").json()
+    assert forward["task"] == "classification"
+    assert forward["output"]["kind"] == "classification"
+    assert forward["output"]["prediction"] == forward["prediction"]
+    assert forward["output"]["probabilities"] == forward["probabilities"]
     assert forward["label"] == 1
     assert len(forward["probabilities"]) == 3
 
@@ -293,12 +298,16 @@ def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None
     assert response.status_code == 200
     payload = response.json()
     run_id = payload["run_id"]
+    assert payload["resource"]["task"] == "classification"
     assert payload["resource"]["class_names"] == ["red", "green", "blue"]
 
     detail = client.get(f"/api/runs/{run_id}/detail").json()
+    assert detail["config"]["task"] == "classification"
     assert detail["config"]["class_names"] == ["red", "green", "blue"]
 
     forward = client.get(f"/api/runs/{run_id}/forward?index=2").json()
+    assert forward["task"] == "classification"
+    assert forward["output"]["kind"] == "classification"
     assert forward["class_names"] == ["red", "green", "blue"]
     assert forward["image_shape"] == [3, 2, 2]
     assert len(forward["image_pixels"]) == 12

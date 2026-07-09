@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { chartProbabilityRows, displayClassName, normalizeImageShape, topProbabilityRows } from "./inferenceView";
+import {
+  chartProbabilityRows,
+  classificationOutputFromPrediction,
+  displayClassName,
+  inferenceOutputKind,
+  normalizeImageShape,
+  structuredOutputRows,
+  topProbabilityRows
+} from "./inferenceView";
 
 describe("inference view helpers", () => {
   it("uses class names when available and falls back to numeric labels", () => {
@@ -31,6 +39,64 @@ describe("inference view helpers", () => {
     expect(rows).toHaveLength(10);
     expect(rows[0]).toEqual({ index: 23, label: "23", value: 0.23 });
     expect(rows[9]).toEqual({ index: 14, label: "14", value: 0.14 });
+  });
+
+  it("resolves classification output from the task contract before legacy fields", () => {
+    const view = classificationOutputFromPrediction({
+      task: "classification",
+      output: {
+        kind: "classification",
+        label: 2,
+        prediction: 1,
+        confidence: 0.82,
+        probabilities: [0.1, 0.82, 0.08],
+        class_names: ["red", "green", "blue"]
+      },
+      sample_index: 0,
+      label: 0,
+      prediction: 0,
+      weights: "trained",
+      sample_source: "probe",
+      class_names: ["old"],
+      image_shape: [3, 2, 2],
+      image_pixels: Array(12).fill(0),
+      probabilities: [0.9, 0.05, 0.05],
+      graph: { nodes: [], edges: [] },
+      layers: []
+    });
+
+    expect(view).toEqual({
+      label: 2,
+      prediction: 1,
+      confidence: 0.82,
+      probabilities: [0.1, 0.82, 0.08],
+      classNames: ["red", "green", "blue"]
+    });
+  });
+
+  it("summarizes non-classification outputs for the fallback renderer", () => {
+    const prediction = {
+      task: "detection",
+      output: { kind: "detection", boxes: [[0, 0, 4, 4]], score: 0.93123, model: "tiny-detector" },
+      sample_index: 0,
+      label: 0,
+      prediction: 0,
+      weights: "trained" as const,
+      sample_source: "probe" as const,
+      image_shape: [3, 2, 2],
+      image_pixels: Array(12).fill(0),
+      probabilities: [],
+      graph: { nodes: [], edges: [] },
+      layers: []
+    };
+
+    expect(inferenceOutputKind(prediction)).toBe("detection");
+    expect(classificationOutputFromPrediction(prediction)).toBeUndefined();
+    expect(structuredOutputRows(prediction.output)).toEqual([
+      { key: "boxes", value: "1 items" },
+      { key: "score", value: "0.9312" },
+      { key: "model", value: "tiny-detector" }
+    ]);
   });
 
   it("normalizes image shapes to channel-height-width", () => {
