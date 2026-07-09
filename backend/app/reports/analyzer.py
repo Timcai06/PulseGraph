@@ -5,6 +5,7 @@ from typing import Any
 import torch
 
 from app.events.run_store import RunStore, runs_dir
+from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource
 from app.runtime.model_loader import load_model_and_weights
 from app.runtime.replay import load_probe_samples
 from app.schemas import (
@@ -86,8 +87,10 @@ def _evaluate_checkpoints(store: RunStore, detail: RunDetail) -> tuple[list[Chec
     checkpoints = detail.checkpoints[-MAX_EVALUATED_CHECKPOINTS:]
 
     source_root = store.run_dir(detail.run_id) / "source"
+    config = detail.config or {}
+    class_names = config.get("class_names") if isinstance(config.get("class_names"), list) else None
     for checkpoint in checkpoints:
-        model = load_model_and_weights(source_path, entry_class, runs_dir() / checkpoint.path, source_root=source_root)
+        model = _load_checkpoint_model(store, detail, entry_class, source_path, source_root, checkpoint.path)
         if model is None:
             continue
         try:
@@ -105,29 +108,82 @@ def _evaluate_checkpoints(store: RunStore, detail: RunDetail) -> tuple[list[Chec
             )
         )
         if checkpoint is checkpoints[-1]:
-            error_analysis = _build_error_analysis(images, labels, predictions)
+            error_analysis = _build_error_analysis(images, labels, predictions, class_names=class_names)
 
     return evaluations, error_analysis
 
 
-def _build_error_analysis(images: torch.Tensor, labels: torch.Tensor, predictions: torch.Tensor) -> ErrorAnalysis:
+def _load_checkpoint_model(
+    store: RunStore,
+    detail: RunDetail,
+    entry_class: str,
+    source_path,
+    source_root,
+    checkpoint_path: str,
+):
+    checkpoint = runs_dir() / checkpoint_path
+    if (detail.config or {}).get("run_kind") == "resource-training":
+        try:
+            resource = load_training_resource(source_path, source_root=source_root)
+            model = resource.build_model()
+            state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+            if not isinstance(state_dict, dict):
+                return None
+            model.load_state_dict(state_dict)
+            model.eval()
+            return model
+        except (ResourceContractError, RuntimeError, OSError, ValueError):
+            return None
+    return load_model_and_weights(source_path, entry_class, checkpoint, source_root=source_root)
+
+
+def _class_name(class_names: list[str] | None, label: int) -> str | None:
+    if class_names is None or label < 0 or label >= len(class_names):
+        return None
+    return class_names[label]
+
+
+def _sample_image_entry(image: torch.Tensor) -> dict[str, Any]:
+    try:
+        image_shape = image_shape_from_sample(image)
+    except ResourceContractError:
+        return {}
+    if image_shape[0] not in {1, 3}:
+        return {}
+    return {
+        "image_shape": image_shape,
+        "pixels": [round(float(value), 3) for value in image.flatten().tolist()],
+    }
+
+
+def _build_error_analysis(
+    images: torch.Tensor,
+    labels: torch.Tensor,
+    predictions: torch.Tensor,
+    class_names: list[str] | None = None,
+) -> ErrorAnalysis:
     classes = sorted(set(labels.tolist()) | set(predictions.tolist()))
     class_index = {value: position for position, value in enumerate(classes)}
     confusion = [[0] * len(classes) for _ in classes]
     misclassified: list[dict[str, Any]] = []
-    include_pixels = images.dim() == 4 and list(images.shape[1:]) == [1, 28, 28]
 
     for index in range(labels.numel()):
         label = int(labels[index].item())
         prediction = int(predictions[index].item())
         confusion[class_index[label]][class_index[prediction]] += 1
         if label != prediction and len(misclassified) < MAX_MISCLASSIFIED_SAMPLES:
-            entry: dict[str, Any] = {"index": index, "label": label, "prediction": prediction}
-            if include_pixels:
-                entry["pixels"] = [round(float(v), 3) for v in images[index].flatten().tolist()]
+            entry: dict[str, Any] = {
+                "index": index,
+                "label": label,
+                "label_name": _class_name(class_names, label),
+                "prediction": prediction,
+                "prediction_name": _class_name(class_names, prediction),
+            }
+            if images.dim() >= 3:
+                entry.update(_sample_image_entry(images[index]))
             misclassified.append(entry)
 
-    return ErrorAnalysis(confusion=confusion, labels=classes, misclassified=misclassified)
+    return ErrorAnalysis(confusion=confusion, labels=classes, class_names=class_names, misclassified=misclassified)
 
 
 def _build_insights(report: RunReport, detail: RunDetail) -> list[RunInsight]:

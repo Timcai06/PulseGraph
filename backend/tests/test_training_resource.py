@@ -81,6 +81,51 @@ RGB_RESOURCE_SOURCE = textwrap.dedent(
     """
 )
 
+RGB_REPORT_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    class FixedRgbNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = nn.Parameter(torch.tensor([10.0, 0.0, 0.0]))
+
+        def forward(self, images):
+            return self.bias.unsqueeze(0).repeat(images.shape[0], 1)
+
+
+    def metadata():
+        return {
+            "name": "rgb_report_resource",
+            "classes": 3,
+            "class_names": ["red", "green", "blue"],
+            "input_shape": [3, 2, 2],
+            "batch_size": 4,
+        }
+
+
+    def build_model():
+        return FixedRgbNet()
+
+
+    def train_batch(step, batch_size):
+        images = torch.zeros(batch_size, 3, 2, 2)
+        labels = torch.tensor([(index % 2) + 1 for index in range(batch_size)])
+        for row, label in enumerate(labels):
+            images[row, label, :, :] = 1.0
+        return images, labels
+
+
+    def inference_sample(index):
+        label = (index % 2) + 1
+        image = torch.zeros(3, 2, 2)
+        image[label, :, :] = 1.0
+        return image, label
+    """
+)
+
 BAD_CLASS_NAMES_SOURCE = RGB_RESOURCE_SOURCE.replace(
     '"class_names": ["red", "green", "blue"]',
     '"class_names": ["red", "green"]',
@@ -234,6 +279,10 @@ def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None
     assert preview.status_code == 200
     assert preview.json()["resource"]["class_names"] == ["red", "green", "blue"]
     assert preview.json()["resource"]["input_shape"] == [3, 2, 2]
+    samples = preview.json()["samples"]
+    assert samples[0]["label_name"] == "red"
+    assert samples[0]["image_shape"] == [3, 2, 2]
+    assert len(samples[0]["image_pixels"]) == 12
 
     response = client.post(
         "/api/runs/train-resource",
@@ -253,6 +302,26 @@ def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None
     assert forward["class_names"] == ["red", "green", "blue"]
     assert forward["image_shape"] == [3, 2, 2]
     assert len(forward["image_pixels"]) == 12
+
+
+def test_resource_report_contains_named_rgb_misclassified_samples() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", RGB_REPORT_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "1"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    report = client.get(f"/api/runs/{run_id}/report").json()
+
+    assert report["error_analysis"]["class_names"] == ["red", "green", "blue"]
+    assert report["error_analysis"]["labels"] == [0, 1, 2]
+    sample = report["error_analysis"]["misclassified"][0]
+    assert sample["label_name"] in {"green", "blue"}
+    assert sample["prediction_name"] == "red"
+    assert sample["image_shape"] == [3, 2, 2]
+    assert len(sample["pixels"]) == 12
 
 
 def test_train_resource_endpoint_respects_telemetry_stride() -> None:

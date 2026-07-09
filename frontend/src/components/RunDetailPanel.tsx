@@ -5,6 +5,7 @@ import { useGSAP } from "@gsap/react";
 import type { PredictionResponse, RunDetail, RunReport } from "../api/client";
 import { getRunDetail, getRunReport, runForward } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { displayClassName } from "../lib/inferenceView";
 import { ImagePreview } from "./ImagePreview";
 import { SourceAttach } from "./SourceAttach";
 
@@ -297,14 +298,19 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                             <tr>
                               <th>true \ pred</th>
                               {report.error_analysis.labels.map((label) => (
-                                <th key={label}>{label}</th>
+                                <th key={label}>{displayClassName(label, report.error_analysis?.class_names)}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {report.error_analysis.confusion.map((row, rowIndex) => (
                               <tr key={rowIndex}>
-                                <td>{report.error_analysis?.labels[rowIndex]}</td>
+                                <td>
+                                  {displayClassName(
+                                    report.error_analysis?.labels[rowIndex] ?? rowIndex,
+                                    report.error_analysis?.class_names
+                                  )}
+                                </td>
                                 {row.map((count, columnIndex) => (
                                   <td
                                     key={columnIndex}
@@ -322,9 +328,11 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                         <div className="misclassified">
                           {report.error_analysis.misclassified.map((sample) => (
                             <div className="missample" key={sample.index}>
-                              <ImagePreview pixels={sample.pixels} size="mini" />
+                              <ImagePreview pixels={sample.pixels} imageShape={sample.image_shape} size="mini" />
                               <span>
-                                {sample.label} → {sample.prediction}
+                                {sample.label_name ?? displayClassName(sample.label, report.error_analysis?.class_names)} →{" "}
+                                {sample.prediction_name ??
+                                  displayClassName(sample.prediction, report.error_analysis?.class_names)}
                               </span>
                             </div>
                           ))}

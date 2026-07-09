@@ -23,12 +23,12 @@ from app.inspector.graph_builder import build_graph_from_tensor_specs
 from app.inspector.pt_inspector import inspect_pt_file
 from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
-from app.resources.contract import ResourceContractError, load_training_resource, model_input_from_sample
+from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource, model_input_from_sample
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
 from app.reports.analyzer import build_run_report
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
 from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
-from app.schemas import RunDetail, RunEvent
+from app.schemas import ImageSample, RunDetail, RunEvent
 
 
 app = FastAPI(title="PulseGraph API", version="0.1.0")
@@ -44,6 +44,7 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_ARTIFACT_UPLOAD_BYTES = 50 * 1024 * 1024
 SOURCE_TRAIN_EVENT_INTERVAL_SEC = 0.14
+RESOURCE_PREVIEW_SAMPLE_LIMIT = 12
 
 app.add_middleware(
     CORSMiddleware,
@@ -450,6 +451,31 @@ def _as_model_input(sample: torch.Tensor) -> torch.Tensor:
     return model_input_from_sample(sample)
 
 
+def _class_name(class_names: list[str] | None, label: int) -> str | None:
+    if class_names is None or label < 0 or label >= len(class_names):
+        return None
+    return class_names[label]
+
+
+def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIMIT) -> list[ImageSample]:
+    samples: list[ImageSample] = []
+    class_names = resource.class_names
+    for index in range(limit):
+        image, label = resource.inference_sample(index)
+        image_shape = image_shape_from_sample(image, resource.input_shape)
+        samples.append(
+            ImageSample(
+                index=index,
+                label=label,
+                label_name=_class_name(class_names, label),
+                sample_source=resource.sample_source if resource.sample_source in {"mnist", "synthetic", "probe"} else "probe",
+                image_shape=image_shape,
+                image_pixels=[float(value) for value in image.flatten().tolist()],
+            )
+        )
+    return samples
+
+
 def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, torch.Tensor, str]:
     images: list[torch.Tensor] = []
     labels: list[int] = []
@@ -706,6 +732,7 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
             resource = load_training_resource(root / normalized_entry, source_root=root)
             model = resource.build_model()
             example_input = _as_model_input(resource.inference_sample(0)[0])
+            samples = _resource_preview_samples(resource)
         except ResourceContractError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
@@ -726,6 +753,7 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
         },
+        "samples": [sample.model_dump() for sample in samples],
         "files": [path for path, _ in collected],
         "entry_file": normalized_entry,
         "graph": graph.model_dump(),

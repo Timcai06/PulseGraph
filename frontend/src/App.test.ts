@@ -4,6 +4,7 @@ import controlRailSource from "./components/ControlRail.tsx?raw";
 import imagePreviewSource from "./components/ImagePreview.tsx?raw";
 import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
+import runDetailPanelSource from "./components/RunDetailPanel.tsx?raw";
 import chartsSource from "./components/Charts.tsx?raw";
 
 describe("App workspace layout", () => {
@@ -52,6 +53,15 @@ describe("App workspace layout", () => {
     expect(inferenceProbeSource).toContain("Recognized");
     expect(inferenceProbeSource).toContain("displayClassName");
     expect(inferenceProbeSource).toContain("ImagePreview");
+  });
+
+  it("shows resource preview samples and named report mistakes", () => {
+    expect(controlRailSource).toContain("resource-samples");
+    expect(controlRailSource).toContain("label_name");
+    expect(controlRailSource).toContain("ImagePreview");
+    expect(runDetailPanelSource).toContain("displayClassName");
+    expect(runDetailPanelSource).toContain("image_shape");
+    expect(runDetailPanelSource).toContain("prediction_name");
   });
 
   it("makes training steps configurable from the main workflow", () => {

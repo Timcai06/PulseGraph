@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import type { GraphNode, ModelGraph, NamedSourceFile, PredictionResponse, RunSummary } from "./api/client";
+import type { GraphNode, ImageSample, ModelGraph, NamedSourceFile, PredictionResponse, RunSummary } from "./api/client";
 import {
   deleteRun,
   getDemoModel,
@@ -58,6 +58,7 @@ export type LoadedResourceSummary = {
   classes?: number;
   classNames?: string[];
   dataSource?: string;
+  samples?: ImageSample[];
 };
 
 type SourceRecipe = {
@@ -212,7 +213,8 @@ export default function App() {
           inputShape: preview.resource.input_shape ?? undefined,
           classes: preview.resource.classes ?? undefined,
           classNames: preview.resource.class_names ?? undefined,
-          dataSource: preview.resource.data_source ?? undefined
+          dataSource: preview.resource.data_source ?? undefined,
+          samples: preview.samples
         }
       });
     } catch (error) {

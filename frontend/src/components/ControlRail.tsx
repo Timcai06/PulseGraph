@@ -1,6 +1,7 @@
 import { Dumbbell, FileCheck2, FileCode2, Info, Loader2, Radio, RotateCcw, Zap } from "lucide-react";
 import type { NamedSourceFile, RunSummary } from "../api/client";
 import type { LoadedResourceSummary } from "../App";
+import { ImagePreview } from "./ImagePreview";
 
 type Props = {
   onResourceUpload: (files: NamedSourceFile[]) => void;
@@ -93,12 +94,24 @@ export function ControlRail({
           />
         </label>
         {loadedResource && (
-          <p className="drop-meta">
-            {loadedResource.inputShape?.length ? loadedResource.inputShape.join("×") : "?"}
-            {" → "}
-            {loadedResource.classes ?? "?"} classes
-            {loadedResource.dataSource ? ` · ${loadedResource.dataSource}` : ""}
-          </p>
+          <>
+            <p className="drop-meta">
+              {loadedResource.inputShape?.length ? loadedResource.inputShape.join("×") : "?"}
+              {" → "}
+              {loadedResource.classes ?? "?"} classes
+              {loadedResource.dataSource ? ` · ${loadedResource.dataSource}` : ""}
+            </p>
+            {loadedResource.samples?.length ? (
+              <div className="resource-samples" aria-label="resource preview samples">
+                {loadedResource.samples.slice(0, 8).map((sample) => (
+                  <figure key={sample.index}>
+                    <ImagePreview pixels={sample.image_pixels} imageShape={sample.image_shape} size="mini" />
+                    <figcaption>{sample.label_name ?? sample.label}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : null}
+          </>
         )}
         <label className="number-field">
           <span>Training Steps</span>

@@ -69,6 +69,15 @@ export type PredictionResponse = {
   layers: LayerSnapshot[];
 };
 
+export type ImageSample = {
+  index: number;
+  label: number;
+  label_name?: string | null;
+  sample_source: PredictionResponse["sample_source"];
+  image_shape: number[];
+  image_pixels: number[];
+};
+
 export type MetricPayload = {
   loss?: number | null;
   accuracy?: number | null;
@@ -189,7 +198,16 @@ export type CheckpointEvaluation = {
 export type ErrorAnalysis = {
   confusion: number[][];
   labels: number[];
-  misclassified: { index: number; label: number; prediction: number; pixels?: number[] }[];
+  class_names?: string[] | null;
+  misclassified: {
+    index: number;
+    label: number;
+    label_name?: string | null;
+    prediction: number;
+    prediction_name?: string | null;
+    image_shape?: number[] | null;
+    pixels?: number[];
+  }[];
 };
 
 export type SourceCandidate = {
@@ -252,6 +270,7 @@ export type ResourcePreviewInfo = {
 
 export type ResourcePreview = {
   resource: ResourcePreviewInfo;
+  samples: ImageSample[];
   files: string[];
   entry_file: string;
   graph: ModelGraph;

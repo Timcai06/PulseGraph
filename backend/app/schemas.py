@@ -86,6 +86,15 @@ class PredictionResponse(BaseModel):
     layers: list[LayerSnapshot]
 
 
+class ImageSample(BaseModel):
+    index: int
+    label: int
+    label_name: str | None = None
+    sample_source: Literal["mnist", "synthetic", "probe"] = "probe"
+    image_shape: list[int]
+    image_pixels: list[float]
+
+
 class CheckpointInfo(BaseModel):
     step: int
     epoch: int | None = None
@@ -136,6 +145,7 @@ class CheckpointEvaluation(BaseModel):
 class ErrorAnalysis(BaseModel):
     confusion: list[list[int]] = Field(default_factory=list)
     labels: list[int] = Field(default_factory=list)
+    class_names: list[str] | None = None
     misclassified: list[dict[str, Any]] = Field(default_factory=list)
 
 

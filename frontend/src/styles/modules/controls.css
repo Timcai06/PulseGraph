@@ -104,6 +104,36 @@
   text-align: center;
 }
 
+.resource-samples {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.resource-samples figure {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+}
+
+.resource-samples .image-preview-mini {
+  width: 46px;
+  height: 46px;
+}
+
+.resource-samples figcaption {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
 .file-drop input {
   position: absolute;
   inset: 0;
