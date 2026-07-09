@@ -37,6 +37,10 @@
   will-change: height;
 }
 
+.top-training-drawer.open {
+  max-height: calc(100vh - var(--topbar-h) - var(--dock-handle-h) - 48px);
+}
+
 .training-loop-handle {
   display: flex;
   align-items: center;
@@ -114,12 +118,14 @@
   min-height: 0;
   padding: 12px;
   opacity: 0;
+  overflow: hidden;
   pointer-events: none;
   visibility: hidden;
   will-change: opacity, transform;
 }
 
 .top-training-drawer.open .training-loop-drawer-body {
+  overflow-y: auto;
   visibility: visible;
 }
 

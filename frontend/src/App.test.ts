@@ -169,6 +169,9 @@ describe("App workspace layout", () => {
     expect(trainingLoopStripSource).toContain("gsap");
     expect(trainingLoopStripSource).toContain("useGSAP");
     expect(trainingLoopStripSource).toContain("drawerRef");
+    expect(trainingLoopStripSource).toContain("body.scrollHeight");
+    expect(trainingLoopStripSource).toContain("maxExpandedHeight");
+    expect(trainingLoopStripSource).toContain("overflowY");
     expect(trainingLoopStripSource).toContain("motionDuration");
     expect(trainingLoopStripSource).toContain("top-training-drawer");
     expect(trainingLoopStripSource).toContain("training-loop-handle");

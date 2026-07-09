@@ -30,14 +30,24 @@ export function TrainingLoopStrip({ stages }: Props) {
       const body = bodyRef.current;
       if (!drawer || !body) return;
 
-      const expandedHeight = drawer.scrollHeight;
+      const drawerTop = drawer.getBoundingClientRect().top;
+      const contentHeight = TOP_DRAWER_HANDLE_PX + body.scrollHeight;
+      const maxExpandedHeight = Math.max(TOP_DRAWER_HANDLE_PX, window.innerHeight - drawerTop - 56);
+      const expandedHeight = Math.min(contentHeight, maxExpandedHeight);
+      const bodyMaxHeight = Math.max(0, expandedHeight - TOP_DRAWER_HANDLE_PX);
       const drawerHeight = drawerOpen ? expandedHeight : TOP_DRAWER_HANDLE_PX;
       const stageTargets = body.querySelectorAll(".loop-stage, .stage-drawer-panel");
       gsap.killTweensOf([drawer, body, stageTargets]);
 
       if (reducedMotion) {
         gsap.set(drawer, { height: drawerHeight });
-        gsap.set(body, { autoAlpha: drawerOpen ? 1 : 0, y: 0, pointerEvents: drawerOpen ? "auto" : "none" });
+        gsap.set(body, {
+          autoAlpha: drawerOpen ? 1 : 0,
+          maxHeight: drawerOpen ? bodyMaxHeight : 0,
+          overflowY: drawerOpen && contentHeight > maxExpandedHeight ? "auto" : "visible",
+          y: 0,
+          pointerEvents: drawerOpen ? "auto" : "none"
+        });
         gsap.set(stageTargets, { autoAlpha: 1, y: 0 });
         return;
       }
@@ -49,8 +59,16 @@ export function TrainingLoopStrip({ stages }: Props) {
           .to(drawer, { height: expandedHeight, duration: motionDuration("drawer", reducedMotion) }, 0)
           .fromTo(
             body,
-            { autoAlpha: 0, y: -8, pointerEvents: "none" },
-            { autoAlpha: 1, y: 0, pointerEvents: "auto", duration: motionDurations.panel, ease: motionEase.standard },
+            { autoAlpha: 0, maxHeight: bodyMaxHeight, overflowY: "hidden", y: -8, pointerEvents: "none" },
+            {
+              autoAlpha: 1,
+              maxHeight: bodyMaxHeight,
+              overflowY: contentHeight > maxExpandedHeight ? "auto" : "visible",
+              y: 0,
+              pointerEvents: "auto",
+              duration: motionDurations.panel,
+              ease: motionEase.standard
+            },
             0.1
           )
           .fromTo(
@@ -61,7 +79,19 @@ export function TrainingLoopStrip({ stages }: Props) {
           );
       } else {
         timeline
-          .to(body, { autoAlpha: 0, y: -8, pointerEvents: "none", duration: motionDurations.quick, ease: motionEase.standard }, 0)
+          .to(
+            body,
+            {
+              autoAlpha: 0,
+              maxHeight: 0,
+              overflowY: "hidden",
+              y: -8,
+              pointerEvents: "none",
+              duration: motionDurations.quick,
+              ease: motionEase.standard
+            },
+            0
+          )
           .to(drawer, { height: TOP_DRAWER_HANDLE_PX, duration: motionDuration("drawer", reducedMotion) }, 0);
       }
     },
