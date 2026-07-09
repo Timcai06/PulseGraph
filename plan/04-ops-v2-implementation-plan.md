@@ -40,7 +40,7 @@
 - Create: `frontend/src/lib/layerHealth.ts`
 - Modify: `frontend/src/App.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add source-level assertions to `frontend/src/App.test.ts`:
 
@@ -56,7 +56,7 @@ it("derives operator health from layer snapshots", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -66,7 +66,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: FAIL because `frontend/src/lib/layerHealth.ts` does not exist yet.
 
-- [ ] **Step 3: Implement `layerHealth.ts`**
+- [x] **Step 3: Implement `layerHealth.ts`**
 
 Create `frontend/src/lib/layerHealth.ts`:
 
@@ -146,7 +146,7 @@ export function deriveLayerHealth(node: GraphNode, snapshot?: LayerSnapshot): La
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -156,7 +156,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/App.test.ts frontend/src/lib/layerHealth.ts
@@ -171,7 +171,7 @@ git commit -m "Add layer health derivation"
 - Modify: `frontend/src/styles/modules/graph.css`
 - Modify: `frontend/src/App.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add assertions:
 
@@ -185,7 +185,7 @@ it("shows richer Ops node health metadata", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -195,7 +195,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: FAIL because `ModelGraphPanel` does not yet accept `layerSnapshots` or render health metadata.
 
-- [ ] **Step 3: Modify `ModelGraphPanel` props and node render**
+- [x] **Step 3: Modify `ModelGraphPanel` props and node render**
 
 Add `layerSnapshots` to props and node data:
 
@@ -243,7 +243,7 @@ const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
 });
 ```
 
-- [ ] **Step 4: Add graph node styles**
+- [x] **Step 4: Add graph node styles**
 
 Add to `frontend/src/styles/modules/graph.css`:
 
@@ -285,7 +285,7 @@ Add to `frontend/src/styles/modules/graph.css`:
 }
 ```
 
-- [ ] **Step 5: Pass stream snapshots from `App.tsx`**
+- [x] **Step 5: Pass stream snapshots from `App.tsx`**
 
 Update the `ModelGraphPanel` call:
 
@@ -301,7 +301,7 @@ Update the `ModelGraphPanel` call:
 />
 ```
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run:
 
@@ -311,7 +311,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/App.test.ts frontend/src/App.tsx frontend/src/components/ModelGraphPanel.tsx frontend/src/styles/modules/graph.css
@@ -328,7 +328,7 @@ git commit -m "Show Ops node health metadata"
 - Modify: `frontend/src/styles/modules/graph.css`
 - Modify: `frontend/src/App.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add source imports and assertions:
 
@@ -346,7 +346,7 @@ it("adds a training loop strip to Ops", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -356,7 +356,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: FAIL because the files do not exist.
 
-- [ ] **Step 3: Create `trainingLoop.ts`**
+- [x] **Step 3: Create `trainingLoop.ts`**
 
 ```ts
 import type { MetricPoint } from "../hooks/useRunStream";
@@ -431,7 +431,7 @@ export function deriveTrainingLoopStages(input: Input): TrainingLoopStage[] {
 }
 ```
 
-- [ ] **Step 4: Create `TrainingLoopStrip.tsx`**
+- [x] **Step 4: Create `TrainingLoopStrip.tsx`**
 
 ```tsx
 import type { TrainingLoopStage } from "../lib/trainingLoop";
@@ -454,7 +454,7 @@ export function TrainingLoopStrip({ stages }: Props) {
 }
 ```
 
-- [ ] **Step 5: Render it in `App.tsx`**
+- [x] **Step 5: Render it in `App.tsx`**
 
 Derive stages near `predictionSummary`:
 
@@ -481,7 +481,7 @@ Render above `ModelGraphPanel`:
 <TrainingLoopStrip stages={loopStages} />
 ```
 
-- [ ] **Step 6: Add styles**
+- [x] **Step 6: Add styles**
 
 Add to `frontend/src/styles/modules/graph.css`:
 
@@ -534,7 +534,7 @@ Add to `frontend/src/styles/modules/graph.css`:
 }
 ```
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -544,7 +544,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/src/App.test.ts frontend/src/App.tsx frontend/src/components/TrainingLoopStrip.tsx frontend/src/lib/trainingLoop.ts frontend/src/styles/modules/graph.css
@@ -561,7 +561,7 @@ git commit -m "Add Ops training loop strip"
 - Modify: `frontend/src/styles/modules/controls.css`
 - Modify: `frontend/src/App.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add:
 
@@ -577,7 +577,7 @@ it("adds a selected layer inspector to Ops", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -587,7 +587,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: FAIL because `LayerInspector` does not exist.
 
-- [ ] **Step 3: Create `LayerInspector.tsx`**
+- [x] **Step 3: Create `LayerInspector.tsx`**
 
 ```tsx
 import type { GraphNode, LayerSnapshot, RunEvent } from "../api/client";
@@ -668,7 +668,7 @@ export function LayerInspector({ node, snapshot, history, events }: Props) {
 }
 ```
 
-- [ ] **Step 4: Wire inspector through `ControlRail`**
+- [x] **Step 4: Wire inspector through `ControlRail`**
 
 Add props to `ControlRail`:
 
@@ -690,7 +690,7 @@ Render after the session card:
 />
 ```
 
-- [ ] **Step 5: Pass data from `App.tsx`**
+- [x] **Step 5: Pass data from `App.tsx`**
 
 Compute:
 
@@ -708,7 +708,7 @@ selectedHistory={selectedLayerHistory}
 selectedEvents={selectedLayerEvents}
 ```
 
-- [ ] **Step 6: Add styles**
+- [x] **Step 6: Add styles**
 
 Add to `frontend/src/styles/modules/controls.css`:
 
@@ -775,7 +775,7 @@ Add to `frontend/src/styles/modules/controls.css`:
 }
 ```
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -785,7 +785,7 @@ cd frontend && npm test -- src/App.test.ts --run
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/src/App.test.ts frontend/src/App.tsx frontend/src/components/ControlRail.tsx frontend/src/components/LayerInspector.tsx frontend/src/styles/modules/controls.css
@@ -798,7 +798,7 @@ git commit -m "Add Ops layer inspector"
 
 - Modify only if verification finds defects.
 
-- [ ] **Step 1: Run full tests**
+- [x] **Step 1: Run full tests**
 
 Run:
 
@@ -808,7 +808,7 @@ make test
 
 Expected: backend tests pass and frontend tests pass.
 
-- [ ] **Step 2: Run production build**
+- [x] **Step 2: Run production build**
 
 Run:
 
@@ -818,7 +818,7 @@ cd frontend && npm run build
 
 Expected: build succeeds. Existing Vite chunk-size warning is acceptable.
 
-- [ ] **Step 3: Start local services**
+- [x] **Step 3: Start local services**
 
 Run backend:
 
@@ -832,7 +832,7 @@ Run frontend:
 cd frontend && env PULSEGRAPH_API_URL=http://127.0.0.1:8011 npm run dev -- --port 5174
 ```
 
-- [ ] **Step 4: Verify with Playwright**
+- [x] **Step 4: Verify with Playwright**
 
 Open:
 
@@ -848,7 +848,7 @@ Check:
 - Training still runs.
 - Console has no errors.
 
-- [ ] **Step 5: Capture screenshots**
+- [x] **Step 5: Capture screenshots**
 
 Save ignored screenshots:
 
@@ -858,7 +858,7 @@ mkdir -p output/playwright
 cp "$(ls -t .playwright-cli/page-*.png | head -1)" output/playwright/ops-v2-cockpit.png
 ```
 
-- [ ] **Step 6: Commit final fixes**
+- [x] **Step 6: Commit final fixes**
 
 If browser verification required changes:
 
@@ -868,4 +868,3 @@ git commit -m "Polish Ops v2 cockpit"
 ```
 
 If no changes were needed, do not create an empty commit.
-
