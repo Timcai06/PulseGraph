@@ -10,6 +10,7 @@ import chartsSource from "./components/Charts.tsx?raw";
 import apiHttpSource from "./api/http.ts?raw";
 import stageStatsSource from "./components/StageStats.tsx?raw";
 import motionSource from "./lib/motion.ts?raw";
+import layerHealthSource from "./lib/layerHealth.ts?raw";
 
 describe("App workspace layout", () => {
   it("does not render the right-side layer inspector panel", () => {
@@ -134,5 +135,13 @@ describe("App workspace layout", () => {
     expect(runDetailPanelSource).toContain("Layer Health");
     expect(runDetailPanelSource).toContain("selectedConfusion");
     expect(runDetailPanelSource).toContain("misclassified.filter");
+  });
+
+  it("derives operator health from layer snapshots", () => {
+    expect(layerHealthSource).toContain("deriveLayerHealth");
+    expect(layerHealthSource).toContain("activation_sparsity");
+    expect(layerHealthSource).toContain("gradient_norm");
+    expect(layerHealthSource).toContain("possible dead layer");
+    expect(layerHealthSource).toContain("possible vanishing gradient");
   });
 });
