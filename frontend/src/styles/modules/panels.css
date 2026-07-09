@@ -267,9 +267,9 @@
 .timeline-scrubber {
   display: grid;
   gap: 8px;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid var(--border);
   padding: 10px 14px 12px;
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--surface-deep);
 }
 
 .timeline-head,
@@ -295,7 +295,7 @@
 }
 
 .timeline-state svg {
-  color: var(--cyan);
+  color: var(--accent-text);
 }
 
 .timeline-actions {
@@ -305,7 +305,10 @@
 .timeline-actions button,
 .timeline-control button {
   min-height: 28px;
+  border-color: var(--border);
   border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-soft);
   padding: 0 8px;
   display: inline-flex;
   align-items: center;
@@ -315,8 +318,9 @@
 }
 
 .timeline-actions button.active {
-  border-color: rgba(34, 211, 238, 0.4);
-  color: var(--cyan);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .timeline-control {
@@ -325,7 +329,7 @@
 
 .timeline-control input[type="range"] {
   width: 100%;
-  accent-color: var(--cyan);
+  accent-color: var(--accent);
 }
 
 .causal-focus {
