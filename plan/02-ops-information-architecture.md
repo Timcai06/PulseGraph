@@ -105,4 +105,12 @@ Inspector sections:
 
 ## Future IA
 
-After Ops v2, add a real time scrubber. The scrubber should become the control that synchronizes graph state, metrics, events, checkpoints, and reports.
+The real time scrubber is now part of the Ops cockpit. It synchronizes graph state, metrics, events, layer snapshots, and causal focus.
+
+After Ops v2, introduce Ops Composer as a separate interaction layer:
+
+- Monitor mode remains the default for trusted runtime evidence.
+- Compose mode reuses node ports as tensor input/output anchors.
+- Dragging between ports creates a ghost edge, not a real model mutation.
+- Ghost edges run compatibility checks against shape, kind, and available telemetry.
+- The bottom dock explains the proposed change and its risks before any recipe generation exists.

@@ -4,13 +4,15 @@ This directory is the working plan surface for PulseGraph product and implementa
 
 ## Current Focus
 
-Ops v2 turns the current operator graph from a layer chain into a training runtime cockpit:
+Ops v2 is now the baseline cockpit: the app shows the training loop, operator health, selected-layer evidence, telemetry replay, causal focus, and non-linear graph topology.
 
-- show the training loop as the primary mental model;
-- keep the operator graph as the forward execution map;
-- add layer health overlays from existing telemetry;
-- open a focused graph-area layer inspector when a node is selected;
-- prepare the UI for future time-scrubbing and causal debugging.
+The next focus is Ops Composer. Composer turns operator ports from accidental connection handles into a deliberate model-design surface:
+
+- keep Monitor mode as the trusted runtime view;
+- introduce port semantics for input and output tensors;
+- add a Ghost Compose mode for safe, reversible structure experiments;
+- use shape and telemetry evidence to explain whether a proposed connection is plausible;
+- defer real code generation until the ghost model is useful and well bounded.
 
 ## Documents
 
@@ -18,6 +20,7 @@ Ops v2 turns the current operator graph from a layer chain into a training runti
 - [02-ops-information-architecture.md](02-ops-information-architecture.md): screen structure, hierarchy, and interaction model.
 - [03-ops-data-contract.md](03-ops-data-contract.md): existing data we can use now and future telemetry needed later.
 - [04-ops-v2-implementation-plan.md](04-ops-v2-implementation-plan.md): executable task plan for the next build phase.
+- [05-ops-composer.md](05-ops-composer.md): next-stage design for port semantics and Ghost Compose.
 
 ## Working Rule
 
