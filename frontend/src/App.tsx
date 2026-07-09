@@ -381,6 +381,7 @@ export default function App() {
             pulsedNodeId={stream.pulsedNodeId}
             probabilities={prediction?.probabilities}
             forwardTick={forwardTick}
+            layerSnapshots={stream.layerSnapshots}
             onSelect={setSelectedNode}
           />
           <StageStats metrics={stream.metrics} />

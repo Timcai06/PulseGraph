@@ -6,10 +6,11 @@ import { useGSAP } from "@gsap/react";
 import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";
 import { Flip } from "gsap/Flip";
 import { MotionPathPlugin } from "gsap/MotionPathPlugin";
-import type { GraphNode, ModelGraph } from "../api/client";
+import type { GraphNode, LayerSnapshot, ModelGraph } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { incomingEdges, orderEdgesForSweep } from "../lib/edgeSignal";
 import { displayGraph } from "../lib/graphView";
+import { deriveLayerHealth, formatNodeShape, formatParamCount } from "../lib/layerHealth";
 import { motionDuration, motionDurations, motionEase } from "../lib/motion";
 import { NeuralNetworkView } from "./NeuralNetworkView";
 
@@ -84,8 +85,8 @@ function launchEdgeSignal(timeline: gsap.core.Timeline, layer: SVGSVGElement, pa
     .to(orb, { opacity: 0, duration: 0.14, onComplete: () => orb.remove() }, at + seconds - 0.04);
 }
 
-const NODE_WIDTH = 178;
-const NODE_HEIGHT = 96;
+const NODE_WIDTH = 196;
+const NODE_HEIGHT = 132;
 
 function layoutPositions(graph: ModelGraph): Record<string, { x: number; y: number }> {
   const g = new dagre.graphlib.Graph();
@@ -104,12 +105,22 @@ function layoutPositions(graph: ModelGraph): Record<string, { x: number; y: numb
   return positions;
 }
 
-const PulseNode = memo(({ data, selected }: NodeProps<Node<GraphNode>>) => {
+type PulseNodeData = GraphNode & {
+  snapshot?: LayerSnapshot;
+};
+
+const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
+  const health = deriveLayerHealth(data, data.snapshot);
   return (
-    <div className={`model-node ${selected ? "selected" : ""}`} data-layer-id={data.id}>
+    <div className={`model-node ${selected ? "selected" : ""} health-${health.severity}`} data-layer-id={data.id}>
       <Handle type="target" position={Position.Left} />
       <div className="node-kind">{data.kind}</div>
-      <div className="node-label">{data.id}</div>
+      <div className="node-label">{data.label || data.id}</div>
+      <div className="node-shape">{formatNodeShape(data, data.snapshot)}</div>
+      <div className="node-footer">
+        <span>{formatParamCount(data.param_count)} params</span>
+        <span className="node-health">{health.label}</span>
+      </div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -124,10 +135,11 @@ type Props = {
   probabilities?: number[];
   /* increments on every applied forward pass; triggers the full-path signal sweep */
   forwardTick: number;
+  layerSnapshots: Record<string, LayerSnapshot>;
   onSelect: (node: GraphNode) => void;
 };
 
-export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, forwardTick, onSelect }: Props) {
+export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, forwardTick, layerSnapshots, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewSurfaceRef = useRef<HTMLDivElement | null>(null);
   const sweepRef = useRef<gsap.core.Timeline | null>(null);
@@ -136,15 +148,15 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
   const visibleGraph = useMemo(() => displayGraph(graph), [graph]);
 
   const positions = useMemo(() => layoutPositions(visibleGraph), [visibleGraph]);
-  const nodes = useMemo<Node<GraphNode>[]>(() => {
+  const nodes = useMemo<Node<PulseNodeData>[]>(() => {
     return visibleGraph.nodes.map((node) => ({
       id: node.id,
       type: "pulse",
       position: positions[node.id] ?? { x: 0, y: 0 },
-      data: node,
+      data: { ...node, snapshot: layerSnapshots[node.id] },
       selected: node.id === selectedNodeId
     }));
-  }, [visibleGraph.nodes, positions, selectedNodeId]);
+  }, [visibleGraph.nodes, positions, selectedNodeId, layerSnapshots]);
 
   const edges = useMemo<Edge[]>(() => {
     return visibleGraph.edges.map((edge) => ({

@@ -144,4 +144,12 @@ describe("App workspace layout", () => {
     expect(layerHealthSource).toContain("possible dead layer");
     expect(layerHealthSource).toContain("possible vanishing gradient");
   });
+
+  it("shows richer Ops node health metadata", () => {
+    expect(modelGraphSource).toContain("layerSnapshots");
+    expect(modelGraphSource).toContain("deriveLayerHealth");
+    expect(modelGraphSource).toContain("formatNodeShape");
+    expect(modelGraphSource).toContain("node-health");
+    expect(modelGraphSource).toContain("node-shape");
+  });
 });

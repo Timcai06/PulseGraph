@@ -115,8 +115,8 @@
 }
 
 .model-node {
-  width: 178px;
-  min-height: 72px;
+  width: 196px;
+  min-height: 112px;
   border: 1px solid rgba(34, 211, 238, 0.72);
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(3, 35, 54, 0.98));
   border-radius: var(--radius-md);
@@ -147,6 +147,46 @@
   color: var(--cyan);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.node-shape {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.node-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.node-health {
+  max-width: 92px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-node.health-warning {
+  border-color: rgba(248, 113, 113, 0.75);
+}
+
+.model-node.health-caution {
+  border-color: rgba(251, 191, 36, 0.75);
+}
+
+.model-node.health-healthy .node-health {
+  border-color: rgba(52, 211, 153, 0.5);
 }
 
 .pulse-edge {
