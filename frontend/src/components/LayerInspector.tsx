@@ -8,6 +8,7 @@ type Props = {
   snapshot?: LayerSnapshot;
   history: LayerHistoryPoint[];
   events: RunEvent[];
+  selectedStep?: number;
   onClose?: () => void;
 };
 
@@ -15,7 +16,7 @@ function value(value?: number | null) {
   return value == null ? "n/a" : Number(value).toPrecision(4);
 }
 
-export function LayerInspector({ node, snapshot, history, events, onClose }: Props) {
+export function LayerInspector({ node, snapshot, history, events, selectedStep, onClose }: Props) {
   if (!node) {
     return (
       <section className="layer-inspector empty">
@@ -71,7 +72,7 @@ export function LayerInspector({ node, snapshot, history, events, onClose }: Pro
         <span>{health.detail}</span>
       </div>
       <div className="layer-history-note">
-        {history.length ? `${history.length} snapshots recorded` : "No history for this layer yet"}
+        {history.length ? `${history.length} snapshots recorded${selectedStep == null ? "" : ` · replay <= step ${selectedStep}`}` : "No history for this layer yet"}
       </div>
       <div className="layer-events">
         {relatedEvents.length ? (

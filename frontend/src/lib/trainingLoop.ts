@@ -19,6 +19,7 @@ type Input = {
 
 export function deriveTrainingLoopStages(input: Input): TrainingLoopStage[] {
   const latestMetric = input.metrics.length ? input.metrics[input.metrics.length - 1] : undefined;
+  const latestLearningRate = input.learningRate ?? [...input.metrics].reverse().find((metric) => metric.learningRate != null)?.learningRate;
   const hasLayerSnapshot = input.events.some((event) => event.type === "layer_snapshot");
   const hasCheckpoint = input.events.some((event) => event.type === "checkpoint");
   const hasRunComplete = input.events.some((event) => event.type === "run_complete");
@@ -51,8 +52,8 @@ export function deriveTrainingLoopStages(input: Input): TrainingLoopStage[] {
     {
       id: "optimizer",
       label: "Optimizer",
-      state: input.learningRate == null ? "idle" : "healthy",
-      detail: input.learningRate == null ? "learning rate unknown" : `lr ${input.learningRate}`
+      state: latestLearningRate == null ? "idle" : "healthy",
+      detail: latestLearningRate == null ? "learning rate unknown" : `lr ${latestLearningRate}`
     },
     {
       id: "checkpoint",

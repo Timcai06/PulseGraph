@@ -10,6 +10,7 @@ import type { GraphNode, LayerSnapshot, ModelGraph } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { incomingEdges, orderEdgesForSweep } from "../lib/edgeSignal";
 import { displayGraph } from "../lib/graphView";
+import { deriveGraphTopology, type NodeTopology } from "../lib/graphTopology";
 import { deriveLayerHealth, formatNodeShape, formatParamCount } from "../lib/layerHealth";
 import { motionDuration, motionDurations, motionEase } from "../lib/motion";
 import { NeuralNetworkView } from "./NeuralNetworkView";
@@ -107,18 +108,30 @@ function layoutPositions(graph: ModelGraph): Record<string, { x: number; y: numb
 
 type PulseNodeData = GraphNode & {
   snapshot?: LayerSnapshot;
+  topology?: NodeTopology;
 };
 
 const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
   const health = deriveLayerHealth(data, data.snapshot);
+  const role = data.topology?.role ?? "linear";
   return (
-    <div className={`model-node ${selected ? "selected" : ""} health-${health.severity}`} data-layer-id={data.id}>
+    <div
+      className={`model-node ${selected ? "selected" : ""} health-${health.severity} topology-${role}`}
+      data-layer-id={data.id}
+    >
       <Handle type="target" position={Position.Left} />
-      <div className="node-kind">{data.kind}</div>
+      <div className="node-kind">
+        <span>{data.kind}</span>
+        {data.topology && (
+          <em>
+            D{data.topology.depth} · L{data.topology.lane}
+          </em>
+        )}
+      </div>
       <div className="node-label">{data.label || data.id}</div>
       <div className="node-shape">{formatNodeShape(data, data.snapshot)}</div>
       <div className="node-footer">
-        <span>{formatParamCount(data.param_count)} params</span>
+        <span>{data.topology?.group ?? formatParamCount(data.param_count)} · {formatParamCount(data.param_count)}</span>
         <span className="node-health">{health.label}</span>
       </div>
       <Handle type="source" position={Position.Right} />
@@ -127,6 +140,11 @@ const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
 });
 
 const nodeTypes = { pulse: PulseNode };
+const edgeClassNameByKind = {
+  sequential: "edge-sequential",
+  skip: "edge-skip",
+  merge: "edge-merge"
+} as const;
 
 type Props = {
   graph: ModelGraph;
@@ -146,6 +164,7 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
   const reducedMotion = useReducedMotion();
   const [viewMode, setViewMode] = useState<"ops" | "neurons">("ops");
   const visibleGraph = useMemo(() => displayGraph(graph), [graph]);
+  const topology = useMemo(() => deriveGraphTopology(visibleGraph), [visibleGraph]);
 
   const positions = useMemo(() => layoutPositions(visibleGraph), [visibleGraph]);
   const nodes = useMemo<Node<PulseNodeData>[]>(() => {
@@ -153,19 +172,19 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
       id: node.id,
       type: "pulse",
       position: positions[node.id] ?? { x: 0, y: 0 },
-      data: { ...node, snapshot: layerSnapshots[node.id] },
+      data: { ...node, snapshot: layerSnapshots[node.id], topology: topology.nodes[node.id] },
       selected: node.id === selectedNodeId
     }));
-  }, [visibleGraph.nodes, positions, selectedNodeId, layerSnapshots]);
+  }, [visibleGraph.nodes, positions, selectedNodeId, layerSnapshots, topology.nodes]);
 
   const edges = useMemo<Edge[]>(() => {
     return visibleGraph.edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      className: "pulse-edge"
+      className: `pulse-edge ${edgeClassNameByKind[topology.edges[edge.id]?.kind ?? "sequential"]}`
     }));
-  }, [visibleGraph.edges]);
+  }, [visibleGraph.edges, topology.edges]);
 
   // per-snapshot pulse during training: node glow + comet on its incoming edges
   useGSAP(() => {
@@ -260,6 +279,11 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
     <section className="graph-stage" ref={containerRef}>
       <div className="stage-toolbar">
         <span className="stage-title">{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</span>
+        <div className="topology-summary" aria-label="graph topology summary">
+          <span>{topology.maxDepth + 1} levels</span>
+          {topology.hasBranching && <span>branching</span>}
+          {topology.hasSkipConnections && <span>skip links</span>}
+        </div>
         <div className="view-tabs" aria-label="graph view">
           <button className={viewMode === "ops" ? "active" : ""} onClick={() => handleViewMode("ops")} type="button">Ops</button>
           <button className={viewMode === "neurons" ? "active" : ""} onClick={() => handleViewMode("neurons")} type="button">Neurons</button>

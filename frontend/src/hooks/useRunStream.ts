@@ -8,6 +8,7 @@ export type MetricPoint = {
   step: number;
   loss?: number;
   accuracy?: number;
+  learningRate?: number;
   stepTimeMs?: number;
   memoryPeakMb?: number;
 };
@@ -73,6 +74,7 @@ function applyEvent(state: StreamState, event: RunEvent): StreamState {
       const patch: Partial<MetricPoint> = {};
       if (event.payload.loss != null) patch.loss = event.payload.loss;
       if (event.payload.accuracy != null) patch.accuracy = event.payload.accuracy;
+      if (event.payload.learning_rate != null) patch.learningRate = event.payload.learning_rate;
       next.metrics = upsertMetric(state.metrics, event.step, patch);
       return next;
     }

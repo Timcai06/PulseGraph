@@ -14,6 +14,9 @@ import layerHealthSource from "./lib/layerHealth.ts?raw";
 import trainingLoopSource from "./lib/trainingLoop.ts?raw";
 import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
 import layerInspectorSource from "./components/LayerInspector.tsx?raw";
+import timelineSource from "./lib/timeline.ts?raw";
+import timelineScrubberSource from "./components/TimelineScrubber.tsx?raw";
+import graphTopologySource from "./lib/graphTopology.ts?raw";
 import graphStylesSource from "./styles/modules/graph.css?raw";
 import panelStylesSource from "./styles/modules/panels.css?raw";
 
@@ -205,5 +208,43 @@ describe("App workspace layout", () => {
     expect(layerInspectorSource).toContain("onClose");
     expect(appSource).toContain("selectedLayerHistory");
     expect(appSource).toContain("graph-layer-detail-drawer");
+  });
+
+  it("adds a time scrubber for replaying Ops telemetry frames", () => {
+    expect(timelineSource).toContain("deriveTimelineFrames");
+    expect(timelineSource).toContain("layerSnapshotsAtStep");
+    expect(timelineSource).toContain("eventsAtTimelineStep");
+    expect(timelineScrubberSource).toContain("timeline-scrubber");
+    expect(timelineScrubberSource).toContain("Telemetry timeline");
+    expect(appSource).toContain("selectedTimelineStep");
+    expect(appSource).toContain("TimelineScrubber");
+    expect(appSource).toContain("replayLayerSnapshots");
+    expect(chartsSource).toContain("selectedStep");
+    expect(chartsSource).toContain("markLine");
+  });
+
+  it("surfaces causal debugging focus from timeline replay state", () => {
+    expect(timelineSource).toContain("deriveCausalFocus");
+    expect(timelineSource).toContain("peakLossStep");
+    expect(timelineScrubberSource).toContain("causal-focus");
+    expect(appSource).toContain("causalFocus");
+    expect(appSource).toContain("replayPulseNodeId");
+  });
+
+  it("marks non-linear Ops topology instead of assuming one long line", () => {
+    expect(graphTopologySource).toContain("deriveGraphTopology");
+    expect(graphTopologySource).toContain("hasBranching");
+    expect(graphTopologySource).toContain("hasSkipConnections");
+    expect(modelGraphSource).toContain("deriveGraphTopology");
+    expect(modelGraphSource).toContain("topology-summary");
+    expect(modelGraphSource).toContain("edge-skip");
+    expect(modelGraphSource).toContain("topology-");
+    expect(modelGraphSource).toContain("edgeClassNameByKind");
+  });
+
+  it("keeps optimizer telemetry wired through the stream", () => {
+    expect(trainingLoopSource).toContain("latestLearningRate");
+    expect(appSource).toContain("deriveTrainingLoopStages");
+    expect(appSource).toContain("metrics: stream.metrics");
   });
 });

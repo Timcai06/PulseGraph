@@ -22,6 +22,7 @@ import { HistoryPage } from "./components/HistoryPage";
 import { StageStats } from "./components/StageStats";
 import { TrainingLoopStrip } from "./components/TrainingLoopStrip";
 import { LayerInspector } from "./components/LayerInspector";
+import { TimelineScrubber } from "./components/TimelineScrubber";
 import { useRunStream } from "./hooks/useRunStream";
 import { useReducedMotion } from "./hooks/useReducedMotion";
 import type { Theme } from "./lib/chartTheme";
@@ -31,6 +32,13 @@ import { firstDisplayNode } from "./lib/graphView";
 import { displayClassName } from "./lib/inferenceView";
 import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
+import {
+  deriveCausalFocus,
+  deriveTimelineFrames,
+  eventsAtTimelineStep,
+  layerSnapshotsAtStep,
+  resolveTimelineStep
+} from "./lib/timeline";
 import { deriveTrainingLoopStages } from "./lib/trainingLoop";
 
 gsap.registerPlugin(useGSAP);
@@ -95,6 +103,7 @@ export default function App() {
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
   const [dockOpen, setDockOpen] = useState(false);
   const [forwardTick, setForwardTick] = useState(0);
+  const [selectedTimelineStep, setSelectedTimelineStep] = useState<number | undefined>();
   const shellRef = useRef<HTMLElement | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
@@ -209,6 +218,7 @@ export default function App() {
 
   const handleResourceUpload = async (files: NamedSourceFile[]) => {
     stream.reset();
+    setSelectedTimelineStep(undefined);
     setBusy("resource");
     setErrorMessage(undefined);
     const entryFile = files[0]?.path;
@@ -273,6 +283,7 @@ export default function App() {
       return;
     }
     stream.reset();
+    setSelectedTimelineStep(undefined);
     setBusy("train");
     setErrorMessage(undefined);
     try {
@@ -330,6 +341,7 @@ export default function App() {
     setForwardTarget({ runId });
     setCurrentRunKind("recorded-training");
     setPage("monitor");
+    setSelectedTimelineStep(undefined);
     stream.startStream(runId);
   };
 
@@ -360,6 +372,7 @@ export default function App() {
     setSourceRecipe(undefined);
     setCurrentRunKind(undefined);
     setInspectedNodeId(undefined);
+    setSelectedTimelineStep(undefined);
     loadDemoGraph();
   };
 
@@ -378,8 +391,40 @@ export default function App() {
     [sourceRecipe, graph.nodes.length, prediction, stream.metrics, stream.events]
   );
   const selectedLayerHistory = selectedNode ? stream.layerHistory[selectedNode.id] ?? [] : [];
-  const selectedLayerEvents = selectedNode ? stream.events.filter((event) => event.layer === selectedNode.id) : [];
+  const timelineFrames = useMemo(
+    () => deriveTimelineFrames(stream.metrics, stream.events, stream.layerHistory),
+    [stream.metrics, stream.events, stream.layerHistory]
+  );
+  const selectedTimelineFrameStep = resolveTimelineStep(timelineFrames, selectedTimelineStep);
+  const timelineLive =
+    selectedTimelineStep == null || !timelineFrames.length || selectedTimelineFrameStep === timelineFrames[timelineFrames.length - 1].step;
+  const replayLayerSnapshots = useMemo(
+    () => layerSnapshotsAtStep(stream.layerSnapshots, stream.layerHistory, timelineLive ? undefined : selectedTimelineFrameStep),
+    [stream.layerSnapshots, stream.layerHistory, selectedTimelineFrameStep, timelineLive]
+  );
+  const replayEvents = useMemo(
+    () => eventsAtTimelineStep(stream.events, timelineLive ? undefined : selectedTimelineFrameStep),
+    [stream.events, selectedTimelineFrameStep, timelineLive]
+  );
+  const causalFocus = useMemo(
+    () =>
+      deriveCausalFocus({
+        step: selectedTimelineFrameStep,
+        metrics: stream.metrics,
+        events: stream.events,
+        graph,
+        layerSnapshots: replayLayerSnapshots
+      }),
+    [graph, replayLayerSnapshots, selectedTimelineFrameStep, stream.events, stream.metrics]
+  );
+  const selectedLayerEvents = selectedNode ? replayEvents.filter((event) => event.layer === selectedNode.id) : [];
+  const replayPulseNodeId = timelineLive ? stream.pulsedNodeId : causalFocus.layerId ?? stream.pulsedNodeId;
   const inspectedNode = inspectedNodeId === selectedNode?.id ? selectedNode : undefined;
+
+  const handleTimelineStepChange = (step: number) => {
+    const latestFrameStep = timelineFrames[timelineFrames.length - 1]?.step;
+    setSelectedTimelineStep(step === latestFrameStep ? undefined : step);
+  };
 
   const handleSelectNode = (node: GraphNode) => {
     setSelectedNode(node);
@@ -411,19 +456,20 @@ export default function App() {
           <ModelGraphPanel
             graph={graph}
             selectedNodeId={selectedNode?.id}
-            pulsedNodeId={stream.pulsedNodeId}
+            pulsedNodeId={replayPulseNodeId}
             probabilities={prediction?.probabilities}
             forwardTick={forwardTick}
-            layerSnapshots={stream.layerSnapshots}
+            layerSnapshots={replayLayerSnapshots}
             onSelect={handleSelectNode}
           />
           {inspectedNode && (
             <div className="graph-layer-detail-drawer">
               <LayerInspector
                 node={inspectedNode}
-                snapshot={stream.layerSnapshots[inspectedNode.id]}
-                history={selectedLayerHistory}
+                snapshot={replayLayerSnapshots[inspectedNode.id]}
+                history={timelineLive ? selectedLayerHistory : selectedLayerHistory.filter((point) => point.step <= (selectedTimelineFrameStep ?? 0))}
                 events={selectedLayerEvents}
+                selectedStep={timelineLive ? undefined : selectedTimelineFrameStep}
                 onClose={() => setInspectedNodeId(undefined)}
               />
             </div>
@@ -474,7 +520,22 @@ export default function App() {
                   <h2>Training Telemetry</h2>
                   <span>{stream.runId ? stream.runId : ""}</span>
                 </div>
-                <MetricChart points={stream.metrics} status={stream.status} theme={theme} runKind={currentRunKind} />
+                <MetricChart
+                  points={stream.metrics}
+                  status={stream.status}
+                  theme={theme}
+                  runKind={currentRunKind}
+                  selectedStep={timelineLive ? undefined : selectedTimelineFrameStep}
+                />
+                <TimelineScrubber
+                  frames={timelineFrames}
+                  selectedStep={selectedTimelineFrameStep}
+                  live={timelineLive}
+                  focus={causalFocus}
+                  onStepChange={handleTimelineStepChange}
+                  onLive={() => setSelectedTimelineStep(undefined)}
+                  onJumpToStep={handleTimelineStepChange}
+                />
               </div>
               <div className="prediction-panel">
                 <div className="panel-heading">
@@ -486,7 +547,7 @@ export default function App() {
               <div className="event-panel">
                 <div className="panel-heading">
                   <h2>Runtime Events</h2>
-                  <span>{stream.events.length}</span>
+                  <span>{timelineLive ? stream.events.length : replayEvents.length}</span>
                 </div>
                 <div className="event-list">
                   {errorMessage && (
@@ -495,10 +556,10 @@ export default function App() {
                       <span className="event-layer">{errorMessage}</span>
                     </div>
                   )}
-                  {stream.events.length === 0 && !errorMessage && (
+                  {replayEvents.length === 0 && !errorMessage && (
                     <p className="empty-hint">No events</p>
                   )}
-                  {stream.events.map((event) => (
+                  {replayEvents.map((event) => (
                     <div className={`event ${event.type}`} key={event.event_id}>
                       <i className="event-dot" />
                       <span className="event-type">{event.type}</span>

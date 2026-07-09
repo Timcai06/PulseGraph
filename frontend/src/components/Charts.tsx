@@ -31,6 +31,7 @@ type MetricsProps = {
   status?: StreamStatus;
   theme?: Theme;
   runKind?: string;
+  selectedStep?: number;
 };
 
 function emptyMetricMessage(status: StreamStatus, runKind?: string) {
@@ -43,7 +44,7 @@ function emptyMetricMessage(status: StreamStatus, runKind?: string) {
   return "Run training or watch a recorded training run to populate telemetry.";
 }
 
-export function MetricChart({ points, status = "idle", theme = "dark", runKind }: MetricsProps) {
+export function MetricChart({ points, status = "idle", theme = "dark", runKind, selectedStep }: MetricsProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useChart(ref);
   const reducedMotion = useReducedMotion();
@@ -116,13 +117,24 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind }
             showSymbol: false,
             data: points.map((point) => point.stepTimeMs ?? null),
             color: palette.cyan
+          },
+          {
+            name: "selected step",
+            type: "line",
+            data: [],
+            markLine: selectedStep == null ? undefined : {
+              symbol: "none",
+              label: { formatter: `step ${selectedStep}`, color: palette.text },
+              lineStyle: { color: palette.red, width: 1.5, type: "dashed" },
+              data: [{ xAxis: selectedStep }]
+            }
           }
         ],
         animationDurationUpdate: reducedMotion ? 0 : 220
       },
       { notMerge: true }
     );
-  }, [chartRef, points, reducedMotion, theme]);
+  }, [chartRef, points, reducedMotion, selectedStep, theme]);
 
   return (
     <div className="chart-wrap">
