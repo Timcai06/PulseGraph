@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, FileCode2, FlaskConical, Layers, Link, Loader2, Play, X } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { Flip } from "gsap/Flip";
 import type { PredictionResponse, RunDetail, RunReport } from "../api/client";
 import {
   downloadRunReportMarkdown,
@@ -13,10 +14,11 @@ import {
 } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { displayClassName } from "../lib/inferenceView";
+import { motionDuration, motionDurations, motionEase } from "../lib/motion";
 import { ImagePreview } from "./ImagePreview";
 import { SourceAttach } from "./SourceAttach";
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, Flip);
 
 type Tab = "overview" | "source" | "checkpoints" | "report";
 
@@ -43,21 +45,32 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
     const overlay = overlayRef.current;
     const panel = panelRef.current;
     if (!overlay || !panel || reducedMotion) return;
-    gsap.from(overlay, { opacity: 0, duration: 0.3, ease: "power1.out" });
+    gsap.from(overlay, { opacity: 0, duration: motionDurations.enter, ease: motionEase.signalOut });
     const rect = panel.getBoundingClientRect();
     if (origin && rect.width && rect.height) {
-      gsap.from(panel, {
+      gsap.set(panel, {
         x: origin.left - rect.left,
         y: origin.top - rect.top,
         scaleX: origin.width / rect.width,
         scaleY: origin.height / rect.height,
-        transformOrigin: "top left",
-        duration: 0.5,
-        ease: "power3.inOut",
+        transformOrigin: "top left"
+      });
+      const state = Flip.getState(panel, { props: "transform" });
+      gsap.set(panel, { x: 0, y: 0, scaleX: 1, scaleY: 1 });
+      Flip.from(state, {
+        duration: motionDuration("panel", reducedMotion),
+        ease: motionEase.panel,
+        absolute: true,
         clearProps: "transform"
       });
     } else {
-      gsap.from(panel, { scale: 0.96, y: 12, duration: 0.35, ease: "power2.out", clearProps: "transform" });
+      gsap.from(panel, {
+        scale: 0.96,
+        y: 12,
+        duration: motionDuration("enter", reducedMotion),
+        ease: motionEase.standard,
+        clearProps: "transform"
+      });
     }
   }, [runId]);
   const [detail, setDetail] = useState<RunDetail | undefined>();
@@ -67,6 +80,7 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
   const [replaying, setReplaying] = useState<number | undefined>();
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectedConfusion, setSelectedConfusion] = useState<{ label: number; prediction: number } | undefined>();
   const [error, setError] = useState<string | undefined>();
 
   const refreshDetail = useCallback(() => {
@@ -150,10 +164,17 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
   };
 
   const canReplay = Boolean(detail?.source && detail?.checkpoints.length);
+  const filteredMisclassified = useMemo(() => {
+    const misclassified = report?.error_analysis?.misclassified ?? [];
+    if (!selectedConfusion) return misclassified;
+    return misclassified.filter(
+      (sample) => sample.label === selectedConfusion.label && sample.prediction === selectedConfusion.prediction
+    );
+  }, [report, selectedConfusion]);
 
   return (
     <div className="detail-overlay" role="dialog" aria-label={`Run ${runId} detail`} ref={overlayRef}>
-      <div className="detail-panel" ref={panelRef}>
+      <div className="detail-panel shared-detail" ref={panelRef}>
         <header className="detail-header">
           <div>
             <h2>{runId}</h2>
@@ -285,7 +306,14 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
               {reportLoading && <p className="empty-hint">Analyzing recorded signals…</p>}
               {report && (
                 <>
-                  <section>
+                  <nav className="report-nav" aria-label="report sections">
+                    <a href="#report-summary">Summary</a>
+                    <a href="#report-insights">Insights</a>
+                    <a href="#report-layer-health">Layer Health</a>
+                    <a href="#report-checkpoints">Checkpoints</a>
+                    <a href="#report-error-analysis">Error Analysis</a>
+                  </nav>
+                  <section id="report-insights">
                     <h3>Insights</h3>
                     {report.insights.map((insight) => (
                       <div className={`insight ${severityClass(insight.severity)}`} key={insight.title}>
@@ -295,7 +323,7 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                       </div>
                     ))}
                   </section>
-                  <section className="report-stats">
+                  <section className="report-stats" id="report-summary">
                     <div>
                       <span>final loss</span>
                       <strong>{report.final_loss ?? "–"}</strong>
@@ -314,7 +342,7 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                     </div>
                   </section>
                   {report.layer_health.length > 0 && (
-                    <section>
+                    <section id="report-layer-health">
                       <h3>Layer health</h3>
                       <table className="report-table">
                         <thead>
@@ -341,7 +369,7 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                     </section>
                   )}
                   {report.checkpoint_evaluations.length > 0 && (
-                    <section>
+                    <section id="report-checkpoints">
                       <h3>Checkpoint accuracy (probe samples)</h3>
                       <div className="checkpoint-bars">
                         {report.checkpoint_evaluations.map((evaluation) => (
@@ -357,8 +385,14 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                     </section>
                   )}
                   {report.error_analysis && report.error_analysis.labels.length > 0 && (
-                    <section>
+                    <section id="report-error-analysis">
                       <h3>Error analysis</h3>
+                      {selectedConfusion && (
+                        <button className="confusion-clear" onClick={() => setSelectedConfusion(undefined)} type="button">
+                          Showing {displayClassName(selectedConfusion.label, report.error_analysis?.class_names)} →{" "}
+                          {displayClassName(selectedConfusion.prediction, report.error_analysis?.class_names)}
+                        </button>
+                      )}
                       <div className="confusion-wrap">
                         <table className="report-table confusion">
                           <thead>
@@ -383,7 +417,22 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                                     key={columnIndex}
                                     className={count > 0 ? (rowIndex === columnIndex ? "diag" : "confused") : ""}
                                   >
-                                    {count || ""}
+                                    {count ? (
+                                      <button
+                                        className="confusion-cell"
+                                        onClick={() =>
+                                          setSelectedConfusion({
+                                            label: report.error_analysis?.labels[rowIndex] ?? rowIndex,
+                                            prediction: report.error_analysis?.labels[columnIndex] ?? columnIndex
+                                          })
+                                        }
+                                        type="button"
+                                      >
+                                        {count}
+                                      </button>
+                                    ) : (
+                                      ""
+                                    )}
                                   </td>
                                 ))}
                               </tr>
@@ -391,9 +440,9 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                           </tbody>
                         </table>
                       </div>
-                      {report.error_analysis.misclassified.length > 0 && (
+                      {filteredMisclassified.length > 0 && (
                         <div className="misclassified">
-                          {report.error_analysis.misclassified.map((sample) => (
+                          {filteredMisclassified.map((sample) => (
                             <div className="missample" key={sample.index}>
                               <ImagePreview pixels={sample.pixels} imageShape={sample.image_shape} size="mini" />
                               <span>

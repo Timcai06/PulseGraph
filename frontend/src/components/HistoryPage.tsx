@@ -7,6 +7,7 @@ import { InertiaPlugin } from "gsap/InertiaPlugin";
 import type { RunSummary } from "../api/client";
 import { getRunDetail } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { motionDuration, motionEase, motionStagger } from "../lib/motion";
 import { Sparkline } from "./Sparkline";
 
 gsap.registerPlugin(useGSAP, Draggable, InertiaPlugin);
@@ -23,6 +24,8 @@ type PreviewState = {
   runId: string;
   losses?: number[];
 };
+
+type StatusFilter = "all" | "completed" | "live" | "watched";
 
 function formatTime(seconds: number) {
   if (!seconds) return "unknown";
@@ -42,9 +45,29 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
   const quickMove = useRef<{ x: (value: number) => void; y: (value: number) => void } | null>(null);
   const lossCache = useRef(new Map<string, number[]>());
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const reducedMotion = useReducedMotion();
 
-  const orderedRuns = [...runs].sort((a, b) => b.created_at - a.created_at);
+  const normalizedQuery = query.trim().toLowerCase();
+  const orderedRuns = [...runs]
+    .filter((run) => {
+      const matchesQuery = !normalizedQuery || run.run_id.toLowerCase().includes(normalizedQuery);
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "completed" && run.completed) ||
+        (statusFilter === "live" && !run.completed) ||
+        (statusFilter === "watched" && run.run_id === watchedRunId);
+      return matchesQuery && matchesStatus;
+    })
+    .sort((a, b) => b.created_at - a.created_at);
+
+  const groupedRuns = orderedRuns.reduce<Record<string, RunSummary[]>>((groups, run) => {
+    const day = run.created_at ? new Date(run.created_at * 1000).toLocaleDateString() : "Unknown date";
+    groups[day] = groups[day] ?? [];
+    groups[day].push(run);
+    return groups;
+  }, {});
 
   // draggable filmstrip with inertia; bounds follow content and window size
   useGSAP(() => {
@@ -66,7 +89,14 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
     applyBounds();
     window.addEventListener("resize", applyBounds);
     if (!reducedMotion) {
-      gsap.from(".run-card", { opacity: 0, y: 18, duration: 0.45, stagger: 0.05, ease: "power2.out", clearProps: "all" });
+      gsap.from(".run-card", {
+        opacity: 0,
+        y: 18,
+        duration: motionDuration("enter", reducedMotion),
+        stagger: motionStagger.compact,
+        ease: motionEase.standard,
+        clearProps: "all"
+      });
     }
     return () => window.removeEventListener("resize", applyBounds);
   }, { dependencies: [runs.length, reducedMotion], scope: stripRef });
@@ -75,10 +105,10 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
     const el = previewRef.current;
     if (!el) return;
     quickMove.current = {
-      x: gsap.quickTo(el, "x", { duration: 0.25, ease: "power3" }),
-      y: gsap.quickTo(el, "y", { duration: 0.25, ease: "power3" })
+      x: gsap.quickTo(el, "x", { duration: motionDuration("quick", reducedMotion), ease: motionEase.panel }),
+      y: gsap.quickTo(el, "y", { duration: motionDuration("quick", reducedMotion), ease: motionEase.panel })
     };
-  }, {});
+  }, { dependencies: [reducedMotion] });
 
   const handleCardEnter = (run: RunSummary, event: React.MouseEvent) => {
     const cached = lossCache.current.get(run.run_id);
@@ -107,15 +137,34 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
     <section className="history-page">
       <header className="page-heading">
         <div>
-          <h2>Run History</h2>
-          <p>Completed training runs stay here for replay, reports, and checkpoint inspection. Drag the timeline.</p>
+          <h2>Run Library</h2>
+          <p>Filter runs by state, inspect trends, replay checkpoints, and open reports from the same library.</p>
         </div>
-        <span>{runs.length} completed runs</span>
+        <span>{orderedRuns.length} / {runs.length} runs</span>
       </header>
 
-      {runs.length === 0 ? (
+      <div className="library-controls">
+        <label>
+          <span>Search runs</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="run id" />
+        </label>
+        <div className="library-filters" aria-label="run status filters">
+          {(["all", "completed", "live", "watched"] as StatusFilter[]).map((filter) => (
+            <button
+              className={statusFilter === filter ? "active" : ""}
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              type="button"
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {orderedRuns.length === 0 ? (
         <div className="history-empty">
-          <p>No completed runs yet.</p>
+          <p>No runs match this library view.</p>
         </div>
       ) : (
         <div
@@ -125,48 +174,55 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
           onMouseLeave={() => setPreview(null)}
         >
           <div className="timeline-track" ref={trackRef}>
-            {orderedRuns.map((run) => (
-              <article
-                className={`run-card ${watchedRunId === run.run_id ? "watching" : ""}`}
-                key={run.run_id}
-                onMouseEnter={(event) => handleCardEnter(run, event)}
-              >
-                <header>
-                  <strong>{run.run_id}</strong>
-                  {watchedRunId === run.run_id && <Radio size={14} className="history-watching" />}
-                </header>
-                <span className="run-date">{formatTime(run.created_at)}</span>
-                <div className="run-card-meta">
-                  <span>
-                    steps <b>{run.last_step}</b>
-                  </span>
-                  <span>
-                    events <b>{run.event_count}</b>
-                  </span>
+            {Object.entries(groupedRuns).map(([group, groupRuns]) => (
+              <section className="library-section" key={group}>
+                <h3>{group}</h3>
+                <div className="library-run-row">
+                  {groupRuns.map((run) => (
+                    <article
+                      className={`run-card ${watchedRunId === run.run_id ? "watching" : ""}`}
+                      key={run.run_id}
+                      onMouseEnter={(event) => handleCardEnter(run, event)}
+                    >
+                      <header>
+                        <strong>{run.run_id}</strong>
+                        {watchedRunId === run.run_id && <Radio size={14} className="history-watching" />}
+                      </header>
+                      <span className="run-date">{formatTime(run.created_at)}</span>
+                      <div className="run-card-meta">
+                        <span>
+                          steps <b>{run.last_step}</b>
+                        </span>
+                        <span>
+                          events <b>{run.event_count}</b>
+                        </span>
+                      </div>
+                      <div className="run-card-actions">
+                        <button
+                          className={watchedRunId === run.run_id ? "watching" : ""}
+                          onClick={() => onWatchRun(run.run_id)}
+                          type="button"
+                        >
+                          <Play size={14} /> Replay
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={(event) => {
+                            const card = (event.currentTarget as HTMLElement).closest(".run-card");
+                            onOpenDetail(run.run_id, card?.getBoundingClientRect());
+                          }}
+                          type="button"
+                        >
+                          <FileText size={14} /> Detail
+                        </button>
+                        <button className="secondary" onClick={() => onDeleteRun(run.run_id)} type="button" aria-label={`Delete ${run.run_id}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </article>
+                  ))}
                 </div>
-                <div className="run-card-actions">
-                  <button
-                    className={watchedRunId === run.run_id ? "watching" : ""}
-                    onClick={() => onWatchRun(run.run_id)}
-                    type="button"
-                  >
-                    <Play size={14} /> Replay
-                  </button>
-                  <button
-                    className="secondary"
-                    onClick={(event) => {
-                      const card = (event.currentTarget as HTMLElement).closest(".run-card");
-                      onOpenDetail(run.run_id, card?.getBoundingClientRect());
-                    }}
-                    type="button"
-                  >
-                    <FileText size={14} /> Detail
-                  </button>
-                  <button className="secondary" onClick={() => onDeleteRun(run.run_id)} type="button" aria-label={`Delete ${run.run_id}`}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </article>
+              </section>
             ))}
           </div>
 

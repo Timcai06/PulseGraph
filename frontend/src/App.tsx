@@ -27,6 +27,7 @@ import type { ForwardTarget } from "./lib/forwardTarget";
 import { describeForwardTarget, resolveForwardTarget } from "./lib/forwardTarget";
 import { firstDisplayNode } from "./lib/graphView";
 import { displayClassName } from "./lib/inferenceView";
+import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
 
 gsap.registerPlugin(useGSAP);
@@ -96,6 +97,11 @@ export default function App() {
   const stream = useRunStream();
 
   useEffect(() => {
+    const media = configureMotionDefaults();
+    return () => media.revert();
+  }, []);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
@@ -103,16 +109,23 @@ export default function App() {
   useGSAP(
     () => {
       if (reducedMotion) return;
-      gsap.from(".top-bar, .page-tabs, .control-rail, .stage-toolbar", {
-        opacity: 0,
-        y: 14,
-        duration: 0.5,
-        stagger: 0.08,
-        ease: "power2.out",
-        clearProps: "all"
-      });
-      // the dock keeps its own transform (drawer position), so fade opacity only
-      gsap.from(".bottom-dock", { opacity: 0, duration: 0.5, delay: 0.25, clearProps: "opacity" });
+      const selector = gsap.utils.selector(shellRef);
+      const entranceTargets = selector(".top-bar, .page-tabs, .control-rail, .stage-toolbar");
+      if (entranceTargets.length) {
+        gsap.from(entranceTargets, {
+          opacity: 0,
+          y: 14,
+          duration: motionDurations.panel,
+          stagger: motionStagger.section,
+          ease: motionEase.standard,
+          clearProps: "all"
+        });
+      }
+      const dock = dockRef.current;
+      if (dock) {
+        // the dock keeps its own transform (drawer position), so fade opacity only
+        gsap.from(dock, { opacity: 0, duration: motionDurations.panel, delay: 0.25, clearProps: "opacity" });
+      }
     },
     { scope: shellRef }
   );
@@ -126,7 +139,7 @@ export default function App() {
       if (reducedMotion) {
         gsap.set(dock, { y });
       } else {
-        gsap.to(dock, { y, duration: 0.55, ease: "power3.inOut" });
+        gsap.to(dock, { y, duration: motionDuration("drawer", reducedMotion), ease: motionEase.panel });
       }
     },
     { dependencies: [dockOpen, page, reducedMotion], scope: shellRef }

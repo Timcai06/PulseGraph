@@ -5,8 +5,11 @@ import imagePreviewSource from "./components/ImagePreview.tsx?raw";
 import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
 import runDetailPanelSource from "./components/RunDetailPanel.tsx?raw";
+import historyPageSource from "./components/HistoryPage.tsx?raw";
 import chartsSource from "./components/Charts.tsx?raw";
 import apiHttpSource from "./api/http.ts?raw";
+import stageStatsSource from "./components/StageStats.tsx?raw";
+import motionSource from "./lib/motion.ts?raw";
 
 describe("App workspace layout", () => {
   it("does not render the right-side layer inspector panel", () => {
@@ -96,5 +99,40 @@ describe("App workspace layout", () => {
     expect(chartsSource).toContain("hideOverlap: true");
     expect(chartsSource).toContain("legend:");
     expect(chartsSource).toContain("top: 2");
+  });
+
+  it("centralizes GSAP motion decisions", () => {
+    expect(motionSource).toContain("motionDurations");
+    expect(motionSource).toContain("motionEase");
+    expect(motionSource).toContain("configureMotionDefaults");
+    expect(motionSource).toContain("gsap.defaults");
+    expect(motionSource).toContain("gsap.matchMedia");
+    expect(motionSource).toContain("prefers-reduced-motion");
+    expect([appSource, modelGraphSource, runDetailPanelSource, historyPageSource, stageStatsSource].join("\n")).toContain("../lib/motion");
+  });
+
+  it("uses GSAP Flip for high-level view transitions", () => {
+    expect(modelGraphSource).toContain("gsap/Flip");
+    expect(modelGraphSource).toContain("Flip.getState");
+    expect(modelGraphSource).toContain("Flip.from");
+    expect(runDetailPanelSource).toContain("gsap/Flip");
+    expect(runDetailPanelSource).toContain("shared-detail");
+  });
+
+  it("turns history into a filterable run library", () => {
+    expect(historyPageSource).toContain("Run Library");
+    expect(historyPageSource).toContain("library-controls");
+    expect(historyPageSource).toContain("Search runs");
+    expect(historyPageSource).toContain("statusFilter");
+    expect(historyPageSource).toContain("groupedRuns");
+    expect(historyPageSource).toContain("library-section");
+  });
+
+  it("adds report navigation and confusion drilldown", () => {
+    expect(runDetailPanelSource).toContain("report-nav");
+    expect(runDetailPanelSource).toContain("Summary");
+    expect(runDetailPanelSource).toContain("Layer Health");
+    expect(runDetailPanelSource).toContain("selectedConfusion");
+    expect(runDetailPanelSource).toContain("misclassified.filter");
   });
 });

@@ -7,9 +7,15 @@
   left: calc(var(--rail-w) + 30px);
 }
 
-.graph-stage > .react-flow {
+.graph-view-surface,
+.graph-view-surface > .react-flow {
   width: 100%;
   height: 100%;
+}
+
+.graph-view-surface {
+  position: absolute;
+  inset: 0;
   background: transparent;
 }
 

@@ -3,6 +3,7 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type { MetricPoint } from "../hooks/useRunStream";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { motionDuration, motionEase } from "../lib/motion";
 
 gsap.registerPlugin(useGSAP);
 
@@ -21,8 +22,8 @@ function useCountUp(value: number | undefined, format: (current: number) => stri
     }
     gsap.to(tracked.current, {
       current: value,
-      duration: 0.7,
-      ease: "power2.out",
+      duration: motionDuration("count", reducedMotion),
+      ease: motionEase.standard,
       overwrite: true,
       onUpdate: () => {
         el.textContent = format(tracked.current.current);

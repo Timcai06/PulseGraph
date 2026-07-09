@@ -4,17 +4,19 @@ import dagre from "@dagrejs/dagre";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";
+import { Flip } from "gsap/Flip";
 import { MotionPathPlugin } from "gsap/MotionPathPlugin";
 import type { GraphNode, ModelGraph } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { incomingEdges, orderEdgesForSweep } from "../lib/edgeSignal";
 import { displayGraph } from "../lib/graphView";
+import { motionDuration, motionDurations, motionEase } from "../lib/motion";
 import { NeuralNetworkView } from "./NeuralNetworkView";
 
-gsap.registerPlugin(useGSAP, DrawSVGPlugin, MotionPathPlugin);
+gsap.registerPlugin(useGSAP, DrawSVGPlugin, Flip, MotionPathPlugin);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const SIGNAL_EDGE_SECONDS = 0.42;
+const SIGNAL_EDGE_SECONDS = motionDurations.signal;
 
 function edgePathData(container: HTMLElement, edgeId: string): string | null {
   const group = container.querySelector(`.react-flow__edge[data-id="${CSS.escape(edgeId)}"]`);
@@ -53,8 +55,8 @@ function pulseNode(container: HTMLElement, nodeId: string, strong = false) {
       boxShadow: `0 0 ${strong ? 44 : 30}px rgba(79, 209, 197, ${strong ? 0.75 : 0.55})`,
       yoyo: true,
       repeat: 1,
-      duration: strong ? 0.34 : 0.28,
-      ease: "power2.out"
+      duration: strong ? motionDurations.enter : motionDurations.quick,
+      ease: motionEase.standard
     }
   );
 }
@@ -127,6 +129,7 @@ type Props = {
 
 export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, forwardTick, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewSurfaceRef = useRef<HTMLDivElement | null>(null);
   const sweepRef = useRef<gsap.core.Timeline | null>(null);
   const reducedMotion = useReducedMotion();
   const [viewMode, setViewMode] = useState<"ops" | "neurons">("ops");
@@ -201,6 +204,41 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
     sweepRef.current = timeline;
   }, { dependencies: [forwardTick], scope: containerRef });
 
+  useGSAP(() => {
+    const surface = viewSurfaceRef.current;
+    if (!surface || reducedMotion) return;
+    const targets = Array.from(surface.children);
+    if (!targets.length) return;
+    gsap.from(targets, {
+      autoAlpha: 0,
+      y: 10,
+      duration: motionDuration("enter", reducedMotion),
+      ease: motionEase.standard,
+      stagger: 0.02,
+      clearProps: "all"
+    });
+  }, { dependencies: [viewMode], scope: containerRef });
+
+  const handleViewMode = (nextMode: "ops" | "neurons") => {
+    if (nextMode === viewMode) return;
+    const surface = viewSurfaceRef.current;
+    const state = surface && !reducedMotion ? Flip.getState(surface.children) : null;
+    setViewMode(nextMode);
+    if (state) {
+      requestAnimationFrame(() => {
+        const targets = viewSurfaceRef.current ? Array.from(viewSurfaceRef.current.children) : [];
+        if (!targets.length) return;
+        Flip.from(state, {
+          targets,
+          duration: motionDuration("panel", reducedMotion),
+          ease: motionEase.panel,
+          absolute: true,
+          prune: true
+        });
+      });
+    }
+  };
+
   const handleSelectLayer = (nodeId: string) => {
     const node = visibleGraph.nodes.find((item) => item.id === nodeId);
     if (node) onSelect(node);
@@ -211,26 +249,28 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
       <div className="stage-toolbar">
         <span className="stage-title">{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</span>
         <div className="view-tabs" aria-label="graph view">
-          <button className={viewMode === "ops" ? "active" : ""} onClick={() => setViewMode("ops")} type="button">Ops</button>
-          <button className={viewMode === "neurons" ? "active" : ""} onClick={() => setViewMode("neurons")} type="button">Neurons</button>
+          <button className={viewMode === "ops" ? "active" : ""} onClick={() => handleViewMode("ops")} type="button">Ops</button>
+          <button className={viewMode === "neurons" ? "active" : ""} onClick={() => handleViewMode("neurons")} type="button">Neurons</button>
         </div>
       </div>
-      {viewMode === "ops" ? (
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.24 }}
-          minZoom={0.35}
-          nodesDraggable={false}
-          onNodeClick={(_, node) => onSelect(node.data)}
-        >
-          <Controls />
-        </ReactFlow>
-      ) : (
-        <NeuralNetworkView graph={visibleGraph} probabilities={probabilities} pulsedNodeId={pulsedNodeId} onSelectLayer={handleSelectLayer} />
-      )}
+      <div className="graph-view-surface" ref={viewSurfaceRef}>
+        {viewMode === "ops" ? (
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.24 }}
+            minZoom={0.35}
+            nodesDraggable={false}
+            onNodeClick={(_, node) => onSelect(node.data)}
+          >
+            <Controls />
+          </ReactFlow>
+        ) : (
+          <NeuralNetworkView graph={visibleGraph} probabilities={probabilities} pulsedNodeId={pulsedNodeId} onSelectLayer={handleSelectLayer} />
+        )}
+      </div>
     </section>
   );
 }

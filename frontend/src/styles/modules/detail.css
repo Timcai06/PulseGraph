@@ -246,6 +246,32 @@
   font-size: 12px;
 }
 
+.report-nav {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 8px 0;
+  background: var(--surface-raised);
+}
+
+.report-nav a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.report-nav a:hover {
+  border-color: var(--cyan);
+  color: var(--text);
+}
+
 .report-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -356,6 +382,31 @@
 .report-table.confusion td.confused {
   color: var(--red);
   font-weight: 700;
+}
+
+.confusion-cell {
+  width: 100%;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.confusion-cell:hover {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.confusion-clear {
+  width: auto;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-color: rgba(56, 189, 248, 0.32);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--cyan);
+  font-size: 11px;
 }
 
 .misclassified {
