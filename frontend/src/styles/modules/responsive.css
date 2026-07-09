@@ -46,6 +46,7 @@
 
   .top-bar,
   .page-tabs,
+  .left-control-drawer,
   .control-rail,
   .graph-stage,
   .top-training-drawer,
@@ -83,6 +84,20 @@
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-xl);
     overflow: hidden;
+  }
+
+  .left-control-drawer {
+    display: block;
+    border-radius: var(--radius-xl);
+    box-shadow: none;
+  }
+
+  .control-rail {
+    border-right: 0;
+  }
+
+  .rail-drawer-handle {
+    display: none;
   }
 
   .top-training-drawer {

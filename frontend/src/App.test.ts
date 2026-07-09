@@ -15,6 +15,7 @@ import trainingLoopSource from "./lib/trainingLoop.ts?raw";
 import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
 import layerInspectorSource from "./components/LayerInspector.tsx?raw";
 import graphStylesSource from "./styles/modules/graph.css?raw";
+import panelStylesSource from "./styles/modules/panels.css?raw";
 
 describe("App workspace layout", () => {
   it("keeps layer details out of the control rail", () => {
@@ -178,6 +179,20 @@ describe("App workspace layout", () => {
     expect(graphStylesSource).not.toContain("display: none;");
     expect(trainingLoopStripSource).toContain("activeStageId");
     expect(appSource).toContain("TrainingLoopStrip");
+  });
+
+  it("turns the left control rail into a GSAP-backed drawer layer", () => {
+    expect(controlRailSource).toContain("gsap");
+    expect(controlRailSource).toContain("useGSAP");
+    expect(controlRailSource).toContain("railDrawerOpen");
+    expect(controlRailSource).toContain("drawerRef");
+    expect(controlRailSource).toContain("left-control-drawer");
+    expect(controlRailSource).toContain("rail-drawer-handle");
+    expect(controlRailSource).toContain("motionDuration");
+    expect(controlRailSource).toContain("aria-expanded");
+    expect(appSource).toContain(".left-control-drawer");
+    expect(graphStylesSource).not.toContain("left: calc(var(--rail-w)");
+    expect(panelStylesSource).not.toContain("left: calc(var(--rail-w)");
   });
 
   it("adds a selected layer inspector to Ops", () => {

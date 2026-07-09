@@ -1,10 +1,10 @@
-/* The graph is not a panel: it owns the region right of the rail, no chrome. */
+/* The graph is not a panel: it owns the stage; drawers float above it. */
 .graph-stage {
   position: absolute;
   top: var(--topbar-h);
   right: 16px;
   bottom: calc(var(--dock-handle-h) + 20px);
-  left: calc(var(--rail-w) + 30px);
+  left: 16px;
 }
 
 .graph-view-surface,
@@ -23,7 +23,7 @@
   position: absolute;
   top: calc(var(--topbar-h) + 12px);
   right: 16px;
-  left: calc(var(--rail-w) + 30px);
+  left: 72px;
   z-index: 34;
   display: grid;
   grid-template-rows: 42px auto;
@@ -227,7 +227,7 @@
   top: calc(var(--topbar-h) + 210px);
   right: 24px;
   z-index: 6;
-  width: min(320px, calc(100vw - var(--rail-w) - 76px));
+  width: min(320px, calc(100vw - 88px));
   max-height: calc(100vh - var(--topbar-h) - var(--dock-handle-h) - 266px);
   overflow: auto;
 }
@@ -540,6 +540,10 @@
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   box-shadow: none;
+}
+
+.react-flow__panel.react-flow__controls.left {
+  left: 56px;
 }
 
 .react-flow__controls button {

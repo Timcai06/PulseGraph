@@ -201,20 +201,65 @@ h1, h2, h3, p {
   color: var(--text-muted);
 }
 
-/* ---- Control rail: floating glass panel on the left ---- */
+/* ---- Left control drawer: floating workflow layer over the graph ---- */
 
-.control-rail {
+.left-control-drawer {
   position: absolute;
   left: 16px;
   top: calc(var(--topbar-h) + 8px);
   bottom: 16px;
-  width: var(--rail-w);
-  z-index: 30;
+  z-index: 36;
+  display: grid;
+  grid-template-columns: var(--rail-w) 42px;
+  width: calc(var(--rail-w) + 42px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  transform: translateX(calc(-1 * (var(--rail-w) + 16px)));
+  will-change: transform;
+}
+
+.control-rail {
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.rail-drawer-handle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 42px;
+  min-width: 42px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+  padding: 12px 0;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rail-drawer-handle:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: transparent;
+}
+
+.rail-drawer-handle span {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.left-control-drawer.open .rail-drawer-handle {
+  border-left: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 /* ---- History page: glass sheet under the top bar ---- */

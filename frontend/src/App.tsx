@@ -114,7 +114,7 @@ export default function App() {
     () => {
       if (reducedMotion) return;
       const selector = gsap.utils.selector(shellRef);
-      const entranceTargets = selector(".top-bar, .page-tabs, .control-rail, .stage-toolbar");
+      const entranceTargets = selector(".top-bar, .page-tabs, .stage-toolbar");
       if (entranceTargets.length) {
         gsap.from(entranceTargets, {
           opacity: 0,
@@ -124,6 +124,10 @@ export default function App() {
           ease: motionEase.standard,
           clearProps: "all"
         });
+      }
+      const controlDrawer = selector(".left-control-drawer");
+      if (controlDrawer.length) {
+        gsap.from(controlDrawer, { opacity: 0, duration: motionDurations.panel, delay: 0.18, clearProps: "opacity" });
       }
       const dock = dockRef.current;
       if (dock) {

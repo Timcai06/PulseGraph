@@ -2,7 +2,7 @@
    the open/close tween lives in App.tsx and matches --dock-h/--dock-handle-h. */
 .bottom-dock {
   position: absolute;
-  left: calc(var(--rail-w) + 30px);
+  left: 58px;
   right: 16px;
   bottom: 0;
   z-index: 35;
