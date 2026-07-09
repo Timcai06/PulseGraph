@@ -21,6 +21,7 @@ import { RunDetailPanel } from "./components/RunDetailPanel";
 import { HistoryPage } from "./components/HistoryPage";
 import { StageStats } from "./components/StageStats";
 import { TrainingLoopStrip } from "./components/TrainingLoopStrip";
+import { LayerInspector } from "./components/LayerInspector";
 import { useRunStream } from "./hooks/useRunStream";
 import { useReducedMotion } from "./hooks/useReducedMotion";
 import type { Theme } from "./lib/chartTheme";
@@ -76,6 +77,7 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
   const [graph, setGraph] = useState<ModelGraph>(emptyGraph);
   const [selectedNode, setSelectedNode] = useState<GraphNode | undefined>();
+  const [inspectedNodeId, setInspectedNodeId] = useState<string | undefined>();
   const [prediction, setPrediction] = useState<PredictionResponse | undefined>();
   const [liveRuns, setLiveRuns] = useState<RunSummary[]>([]);
   const [busy, setBusy] = useState<"resource" | "train" | "forward" | undefined>();
@@ -156,6 +158,7 @@ export default function App() {
       .then((modelGraph) => {
         setGraph(modelGraph);
         setSelectedNode(firstDisplayNode(modelGraph));
+        setInspectedNodeId(undefined);
       })
       .catch(() => setErrorMessage("Could not load the demo model graph. Is the backend running?"));
   }, []);
@@ -219,6 +222,7 @@ export default function App() {
       const preview = await previewResource(files, entryFile);
       setGraph(preview.graph);
       setSelectedNode(firstDisplayNode(preview.graph));
+      setInspectedNodeId(undefined);
       setSourceRecipe({
         files,
         entryFile,
@@ -273,6 +277,7 @@ export default function App() {
       const result = await trainResourceRun(sourceRecipe.files, sourceRecipe.entryFile, steps, stride);
       setGraph(result.graph);
       setSelectedNode(firstDisplayNode(result.graph));
+      setInspectedNodeId(undefined);
       setPrediction(undefined);
       setForwardTarget({ runId: result.run_id });
       setPendingForwardRun(result.run_id);
@@ -293,6 +298,7 @@ export default function App() {
     setForwardTick((tick) => tick + 1);
     setGraph(result.graph);
     setSelectedNode(firstDisplayNode(result.graph));
+    setInspectedNodeId(undefined);
     const lastNode = result.graph.nodes[result.graph.nodes.length - 1];
     stream.applyPrediction(result.layers, lastNode?.id);
   };
@@ -349,6 +355,7 @@ export default function App() {
     setPendingForwardRun(undefined);
     setSourceRecipe(undefined);
     setCurrentRunKind(undefined);
+    setInspectedNodeId(undefined);
     loadDemoGraph();
   };
 
@@ -368,6 +375,12 @@ export default function App() {
   );
   const selectedLayerHistory = selectedNode ? stream.layerHistory[selectedNode.id] ?? [] : [];
   const selectedLayerEvents = selectedNode ? stream.events.filter((event) => event.layer === selectedNode.id) : [];
+  const inspectedNode = inspectedNodeId === selectedNode?.id ? selectedNode : undefined;
+
+  const handleSelectNode = (node: GraphNode) => {
+    setSelectedNode(node);
+    setInspectedNodeId(node.id);
+  };
 
   return (
     <main className="app-shell" ref={shellRef}>
@@ -398,8 +411,19 @@ export default function App() {
             probabilities={prediction?.probabilities}
             forwardTick={forwardTick}
             layerSnapshots={stream.layerSnapshots}
-            onSelect={setSelectedNode}
+            onSelect={handleSelectNode}
           />
+          {inspectedNode && (
+            <div className="graph-layer-detail-drawer">
+              <LayerInspector
+                node={inspectedNode}
+                snapshot={stream.layerSnapshots[inspectedNode.id]}
+                history={selectedLayerHistory}
+                events={selectedLayerEvents}
+                onClose={() => setInspectedNodeId(undefined)}
+              />
+            </div>
+          )}
           <StageStats metrics={stream.metrics} />
           <ControlRail
             onResourceUpload={handleResourceUpload}
@@ -425,10 +449,6 @@ export default function App() {
             hasPrediction={Boolean(prediction)}
             liveRuns={runBuckets.active}
             watchedRunId={stream.runId}
-            selectedNode={selectedNode}
-            selectedSnapshot={selectedNode ? stream.layerSnapshots[selectedNode.id] : undefined}
-            selectedHistory={selectedLayerHistory}
-            selectedEvents={selectedLayerEvents}
             busy={busy}
             errorMessage={errorMessage}
           />

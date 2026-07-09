@@ -16,8 +16,11 @@ import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
 import layerInspectorSource from "./components/LayerInspector.tsx?raw";
 
 describe("App workspace layout", () => {
-  it("does not render the right-side layer inspector panel", () => {
-    expect(appSource).not.toContain("<Layer" + "Inspector");
+  it("keeps layer details out of the control rail", () => {
+    expect(controlRailSource).not.toContain("LayerInspector");
+    expect(controlRailSource).not.toContain("layer-inspector");
+    expect(appSource).toContain("graph-layer-detail-drawer");
+    expect(appSource).toContain("<Layer" + "Inspector");
   });
 
   it("keeps the monitor free of explanatory demo copy", () => {
@@ -162,6 +165,9 @@ describe("App workspace layout", () => {
     expect(trainingLoopSource).toContain("Forward");
     expect(trainingLoopSource).toContain("Backward");
     expect(trainingLoopStripSource).toContain("training-loop-strip");
+    expect(trainingLoopStripSource).toContain("stage-detail-panel");
+    expect(trainingLoopStripSource).toContain("aria-expanded");
+    expect(trainingLoopStripSource).toContain("activeStageId");
     expect(appSource).toContain("TrainingLoopStrip");
   });
 
@@ -169,7 +175,8 @@ describe("App workspace layout", () => {
     expect(layerInspectorSource).toContain("LayerInspector");
     expect(layerInspectorSource).toContain("activation_sparsity");
     expect(layerInspectorSource).toContain("gradient_norm");
-    expect(controlRailSource).toContain("selectedNode");
-    expect(controlRailSource).toContain("layer-inspector");
+    expect(layerInspectorSource).toContain("onClose");
+    expect(appSource).toContain("selectedLayerHistory");
+    expect(appSource).toContain("graph-layer-detail-drawer");
   });
 });

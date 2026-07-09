@@ -50,6 +50,8 @@ Each stage has:
 - evidence count or latest metric;
 - active, healthy, warning, or idle visual state.
 
+Each stage is also an expandable trigger. The collapsed row stays compact; clicking a stage opens a stage detail panel above the graph, similar in spirit to the bottom telemetry dock but smaller and scoped to one training-loop stage.
+
 In the first implementation, most stages can be derived from existing events:
 
 - Data: resource loaded or source imported.
@@ -82,7 +84,7 @@ grad stable
 
 ## Layer Inspector
 
-Clicking a node should open a focused inspector rather than only selecting the node.
+Clicking a node should open a focused inspector in the graph area rather than only selecting the node.
 
 Inspector sections:
 
@@ -96,12 +98,11 @@ Inspector sections:
 ## Interaction Rules
 
 - The graph remains the primary object.
-- The right rail is for controls unless a layer is selected.
-- The layer inspector can replace or sit above the run controls, but it must not bury the Run Training and Run Inference actions.
+- The left control rail is only for controls and run state. It must not host layer details.
+- The layer inspector opens as a graph-area drawer so the selected node and its evidence stay spatially connected.
 - The bottom dock owns time-series and event detail.
 - Deep reports remain in Run Detail until the Ops view has enough live evidence.
 
 ## Future IA
 
 After Ops v2, add a real time scrubber. The scrubber should become the control that synchronizes graph state, metrics, events, checkpoints, and reports.
-

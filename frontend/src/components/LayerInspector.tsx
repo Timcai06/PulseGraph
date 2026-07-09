@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import type { GraphNode, LayerSnapshot, RunEvent } from "../api/client";
 import type { LayerHistoryPoint } from "../hooks/useRunStream";
 import { deriveLayerHealth, formatNodeShape, formatParamCount } from "../lib/layerHealth";
@@ -7,13 +8,14 @@ type Props = {
   snapshot?: LayerSnapshot;
   history: LayerHistoryPoint[];
   events: RunEvent[];
+  onClose?: () => void;
 };
 
 function value(value?: number | null) {
   return value == null ? "n/a" : Number(value).toPrecision(4);
 }
 
-export function LayerInspector({ node, snapshot, history, events }: Props) {
+export function LayerInspector({ node, snapshot, history, events, onClose }: Props) {
   if (!node) {
     return (
       <section className="layer-inspector empty">
@@ -29,11 +31,18 @@ export function LayerInspector({ node, snapshot, history, events }: Props) {
   return (
     <section className={`layer-inspector health-${health.severity}`}>
       <header>
-        <span>Layer Inspector</span>
-        <h2>{node.label || node.id}</h2>
-        <p>
-          {node.kind} · {node.confidence}
-        </p>
+        <div>
+          <span>Layer Inspector</span>
+          <h2>{node.label || node.id}</h2>
+          <p>
+            {node.kind} · {node.confidence}
+          </p>
+        </div>
+        {onClose && (
+          <button className="layer-inspector-close" onClick={onClose} type="button" aria-label="Close layer inspector">
+            <X size={14} />
+          </button>
+        )}
       </header>
       <dl>
         <div>

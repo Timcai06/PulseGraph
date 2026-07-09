@@ -10,6 +10,14 @@
 
 ---
 
+## UX Amendment
+
+The implementation was adjusted after visual review:
+
+- The training loop strip is no longer a passive status row. Each stage is an expandable trigger with a focused stage detail panel.
+- Layer details do not live in the left control rail. The control rail remains for resource/run actions, while selected-node details open in a graph-area drawer.
+- Dark and light themes both require explicit styling for stage panels and layer detail surfaces.
+
 ## File Map
 
 - Create: `frontend/src/lib/layerHealth.ts`
@@ -17,13 +25,13 @@
 - Create: `frontend/src/lib/trainingLoop.ts`
   - Derive stage states for Data, Forward, Loss, Backward, Optimizer, Checkpoint, and Eval.
 - Create: `frontend/src/components/TrainingLoopStrip.tsx`
-  - Render the stage strip above the operator graph.
+  - Render the expandable stage strip above the operator graph.
 - Create: `frontend/src/components/LayerInspector.tsx`
-  - Render selected node identity, shape, params, latest layer health, history, and related events.
+  - Render selected node identity, shape, params, latest layer health, history, and related events in the graph-area drawer.
 - Modify: `frontend/src/components/ModelGraphPanel.tsx`
   - Enrich node display with shape, params, confidence, and health badge.
 - Modify: `frontend/src/components/ControlRail.tsx`
-  - Add optional layer inspector area while preserving run controls.
+  - Keep the rail focused on controls and remove layer detail ownership.
 - Modify: `frontend/src/App.tsx`
   - Pass stream layer snapshots/history/events into Ops components.
 - Modify: `frontend/src/App.test.ts`
@@ -31,7 +39,7 @@
 - Modify: `frontend/src/styles/modules/graph.css`
   - Style richer graph nodes and loop strip placement.
 - Modify: `frontend/src/styles/modules/controls.css`
-  - Style layer inspector inside the control rail.
+  - Keep control rail styles limited to controls and run state.
 
 ## Task 1: Add Layer Health Derivation
 

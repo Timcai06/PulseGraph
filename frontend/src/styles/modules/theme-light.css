@@ -57,6 +57,20 @@
   border-color: rgba(37, 99, 235, 0.35);
 }
 
+[data-theme="light"] .loop-stage {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="light"] .loop-stage:hover,
+[data-theme="light"] .loop-stage.open {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+[data-theme="light"] .stage-detail-panel,
+[data-theme="light"] .layer-inspector {
+  background: rgba(255, 255, 255, 0.94);
+}
+
 [data-theme="light"] .node-kind {
   color: var(--cyan);
 }

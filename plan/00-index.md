@@ -9,7 +9,7 @@ Ops v2 turns the current operator graph from a layer chain into a training runti
 - show the training loop as the primary mental model;
 - keep the operator graph as the forward execution map;
 - add layer health overlays from existing telemetry;
-- open a focused layer inspector when a node is selected;
+- open a focused graph-area layer inspector when a node is selected;
 - prepare the UI for future time-scrubbing and causal debugging.
 
 ## Documents
@@ -24,6 +24,5 @@ Ops v2 turns the current operator graph from a layer chain into a training runti
 Every Ops change should preserve this hierarchy:
 
 1. Observe: show current run health without asking the user to dig.
-2. Diagnose: let the user click a stage, node, or step to inspect evidence.
+2. Diagnose: let the user expand a stage, click a node, or choose a step to inspect evidence.
 3. Act: expose replay, report, export, and next-run actions only when they are relevant.
-
