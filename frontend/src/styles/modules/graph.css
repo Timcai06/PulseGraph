@@ -27,12 +27,14 @@
   z-index: 34;
   display: grid;
   grid-template-rows: 42px auto;
+  height: 42px;
   overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   background: var(--glass-bg-strong);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
   backdrop-filter: var(--glass-blur);
+  will-change: height;
 }
 
 .training-loop-handle {
@@ -106,15 +108,19 @@
 }
 
 .training-loop-drawer-body {
-  display: none;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.38fr);
   gap: 12px;
   min-height: 0;
   padding: 12px;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  will-change: opacity, transform;
 }
 
 .top-training-drawer.open .training-loop-drawer-body {
-  display: grid;
+  visibility: visible;
 }
 
 .loop-stage-row {

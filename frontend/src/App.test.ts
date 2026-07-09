@@ -14,6 +14,7 @@ import layerHealthSource from "./lib/layerHealth.ts?raw";
 import trainingLoopSource from "./lib/trainingLoop.ts?raw";
 import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
 import layerInspectorSource from "./components/LayerInspector.tsx?raw";
+import graphStylesSource from "./styles/modules/graph.css?raw";
 
 describe("App workspace layout", () => {
   it("keeps layer details out of the control rail", () => {
@@ -164,12 +165,17 @@ describe("App workspace layout", () => {
     expect(trainingLoopSource).toContain("Data");
     expect(trainingLoopSource).toContain("Forward");
     expect(trainingLoopSource).toContain("Backward");
+    expect(trainingLoopStripSource).toContain("gsap");
+    expect(trainingLoopStripSource).toContain("useGSAP");
+    expect(trainingLoopStripSource).toContain("drawerRef");
+    expect(trainingLoopStripSource).toContain("motionDuration");
     expect(trainingLoopStripSource).toContain("top-training-drawer");
     expect(trainingLoopStripSource).toContain("training-loop-handle");
     expect(trainingLoopStripSource).toContain("training-loop-drawer-body");
     expect(trainingLoopStripSource).toContain("drawerOpen");
     expect(trainingLoopStripSource).toContain("aria-expanded");
     expect(trainingLoopStripSource).not.toContain("stage-detail-panel");
+    expect(graphStylesSource).not.toContain("display: none;");
     expect(trainingLoopStripSource).toContain("activeStageId");
     expect(appSource).toContain("TrainingLoopStrip");
   });

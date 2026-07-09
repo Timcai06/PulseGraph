@@ -445,8 +445,12 @@ export function deriveTrainingLoopStages(input: Input): TrainingLoopStage[] {
 
 Updated direction: the training-loop surface should follow the same product pattern as the bottom Telemetry drawer. It is no longer a persistent row of separate top cards. The default state is a compact integrated handle; expanding the drawer reveals the Data / Forward / Loss / Backward / Optimizer / Checkpoint / Eval stages and the selected stage explanation inside the same surface.
 
+Motion correction: this drawer must use the same GSAP-backed interaction model as Telemetry, not a hard `display: none` / `display: grid` switch. The component owns a drawer ref, uses `useGSAP`, animates the drawer height from the 42px handle to measured content height, and staggers the inner stage/detail reveal with opacity and `y`. On rapid toggles, kill active tweens and continue from the current inline height instead of reverting first.
+
 ```tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import type { TrainingLoopStage } from "../lib/trainingLoop";
 
 type Props = {
@@ -455,9 +459,17 @@ type Props = {
 
 export function TrainingLoopStrip({ stages }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement | null>(null);
+
+  useGSAP(() => {
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    gsap.killTweensOf(drawer);
+    gsap.to(drawer, { height: drawerOpen ? drawer.scrollHeight : 42 });
+  }, { dependencies: [drawerOpen], scope: drawerRef });
 
   return (
-    <section className={`top-training-drawer ${drawerOpen ? "open" : ""}`} aria-label="training loop drawer">
+    <section className={`top-training-drawer ${drawerOpen ? "open" : ""}`} aria-label="training loop drawer" ref={drawerRef}>
       <button className="training-loop-handle" aria-expanded={drawerOpen} onClick={() => setDrawerOpen((open) => !open)} type="button">
         Training Loop
       </button>
@@ -514,10 +526,13 @@ Add to `frontend/src/styles/modules/graph.css`:
   z-index: 34;
   display: grid;
   grid-template-rows: 42px auto;
+  height: 42px;
+  overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   background: var(--glass-bg-strong);
   backdrop-filter: var(--glass-blur);
+  will-change: height;
 }
 
 .training-loop-handle {
@@ -526,14 +541,14 @@ Add to `frontend/src/styles/modules/graph.css`:
 }
 
 .training-loop-drawer-body {
-  display: none;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.38fr);
   gap: 12px;
   padding: 12px;
-}
-
-.top-training-drawer.open .training-loop-drawer-body {
-  display: grid;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  will-change: opacity, transform;
 }
 
 .loop-stage {
