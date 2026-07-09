@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileCode2, FlaskConical, Layers, Loader2, Play, X } from "lucide-react";
+import { Check, Download, FileCode2, FlaskConical, Layers, Link, Loader2, Play, X } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type { PredictionResponse, RunDetail, RunReport } from "../api/client";
-import { getRunDetail, getRunReport, runForward } from "../api/client";
+import {
+  downloadRunReportMarkdown,
+  getRunDetail,
+  getRunReport,
+  runForward,
+  runReportHtmlUrl,
+  runReportMarkdownUrl
+} from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { displayClassName } from "../lib/inferenceView";
 import { ImagePreview } from "./ImagePreview";
@@ -58,6 +65,8 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [replaying, setReplaying] = useState<number | undefined>();
+  const [exporting, setExporting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
   const refreshDetail = useCallback(() => {
@@ -93,6 +102,50 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
       setError(err instanceof Error ? err.message : "Forward replay failed.");
     } finally {
       setReplaying(undefined);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    setExporting(true);
+    setError(undefined);
+    try {
+      const blob = await downloadRunReportMarkdown(runId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${runId}-report.md`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Report export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleCopyReportLink = async () => {
+    setError(undefined);
+    try {
+      const href = new URL(runReportMarkdownUrl(runId), window.location.origin).toString();
+      await navigator.clipboard.writeText(href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setError("Could not copy the report link.");
+    }
+  };
+
+  const handleOpenPrintableReport = (printAfterLoad = false) => {
+    setError(undefined);
+    const opened = window.open(runReportHtmlUrl(runId), "_blank");
+    if (!opened) {
+      setError("Could not open the printable report.");
+      return;
+    }
+    if (printAfterLoad) {
+      opened.addEventListener("load", () => opened.print(), { once: true });
     }
   };
 
@@ -215,6 +268,20 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
 
           {!loading && tab === "report" && (
             <>
+              <div className="report-actions">
+                <button onClick={handleDownloadReport} disabled={exporting} type="button">
+                  {exporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Download report
+                </button>
+                <button onClick={() => handleOpenPrintableReport()} type="button">
+                  <FileCode2 size={14} /> Printable HTML
+                </button>
+                <button onClick={() => handleOpenPrintableReport(true)} type="button">
+                  <FlaskConical size={14} /> Print / PDF
+                </button>
+                <button onClick={handleCopyReportLink} type="button">
+                  {copied ? <Check size={14} /> : <Link size={14} />} Copy link
+                </button>
+              </div>
               {reportLoading && <p className="empty-hint">Analyzing recorded signals…</p>}
               {report && (
                 <>

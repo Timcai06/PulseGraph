@@ -324,6 +324,53 @@ def test_resource_report_contains_named_rgb_misclassified_samples() -> None:
     assert len(sample["pixels"]) == 12
 
 
+def test_resource_report_exports_shareable_markdown() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", RGB_REPORT_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "1"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    export = client.get(f"/api/runs/{run_id}/report/export.md")
+
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith("text/markdown")
+    assert f'attachment; filename="{run_id}-report.md"' in export.headers["content-disposition"]
+    markdown = export.text
+    assert markdown.startswith(f"# PulseGraph Run Report: {run_id}")
+    assert "Generated checkpoint: step 1" in markdown
+    assert "run_kind: resource-training" in markdown
+    assert "resource_name: rgb_report_resource" in markdown
+    assert "## Layer Health" in markdown
+    assert "## Error Analysis" in markdown
+    assert "green -> red" in markdown or "blue -> red" in markdown
+
+
+def test_resource_report_exports_printable_html() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", RGB_REPORT_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "1"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    export = client.get(f"/api/runs/{run_id}/report/export.html")
+
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith("text/html")
+    html = export.text
+    assert f"<title>PulseGraph Run Report: {run_id}</title>" in html
+    assert "window.print()" in html
+    assert "resource-training" in html
+    assert "rgb_report_resource" in html
+    assert "Layer Health" in html
+    assert "Error Analysis" in html
+    assert "green -&gt; red" in html or "blue -&gt; red" in html
+
+
 def test_train_resource_endpoint_respects_telemetry_stride() -> None:
     response = client.post(
         "/api/runs/train-resource",

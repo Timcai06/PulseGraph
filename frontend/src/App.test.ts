@@ -6,6 +6,7 @@ import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
 import runDetailPanelSource from "./components/RunDetailPanel.tsx?raw";
 import chartsSource from "./components/Charts.tsx?raw";
+import apiHttpSource from "./api/http.ts?raw";
 
 describe("App workspace layout", () => {
   it("does not render the right-side layer inspector panel", () => {
@@ -62,6 +63,19 @@ describe("App workspace layout", () => {
     expect(runDetailPanelSource).toContain("displayClassName");
     expect(runDetailPanelSource).toContain("image_shape");
     expect(runDetailPanelSource).toContain("prediction_name");
+  });
+
+  it("can export and copy a shareable run report", () => {
+    expect(apiHttpSource).toContain("downloadRunReportMarkdown");
+    expect(apiHttpSource).toContain("/report/export.md");
+    expect(apiHttpSource).toContain("runReportHtmlUrl");
+    expect(apiHttpSource).toContain("/report/export.html");
+    expect(runDetailPanelSource).toContain("Download report");
+    expect(runDetailPanelSource).toContain("Printable HTML");
+    expect(runDetailPanelSource).toContain("Print / PDF");
+    expect(runDetailPanelSource).toContain("window.open");
+    expect(runDetailPanelSource).toContain("Copy link");
+    expect(runDetailPanelSource).toContain("navigator.clipboard.writeText");
   });
 
   it("makes training steps configurable from the main workflow", () => {

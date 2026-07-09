@@ -233,6 +233,19 @@
   color: var(--teal);
 }
 
+.report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.report-actions button {
+  width: auto;
+  padding: 8px 11px;
+  font-size: 12px;
+}
+
 .report-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

@@ -65,6 +65,20 @@ export async function getRunReport(runId: string): Promise<RunReport> {
   return response.json();
 }
 
+export function runReportMarkdownUrl(runId: string): string {
+  return `/api/runs/${encodeURIComponent(runId)}/report/export.md`;
+}
+
+export function runReportHtmlUrl(runId: string): string {
+  return `/api/runs/${encodeURIComponent(runId)}/report/export.html`;
+}
+
+export async function downloadRunReportMarkdown(runId: string): Promise<Blob> {
+  const response = await fetch(runReportMarkdownUrl(runId));
+  if (!response.ok) throw new Error("Failed to export run report");
+  return response.blob();
+}
+
 export async function runForward(runId: string, checkpointStep = 0, index = 0): Promise<PredictionResponse> {
   const response = await fetch(
     `/api/runs/${encodeURIComponent(runId)}/forward?checkpoint_step=${checkpointStep}&index=${index}`

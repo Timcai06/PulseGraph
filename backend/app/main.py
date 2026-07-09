@@ -11,7 +11,7 @@ from typing import Literal
 import torch
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 
 from app.api.routes_runs import create_runs_router
 from app.events.run_registry import run_registry
@@ -26,6 +26,7 @@ from app.inspector.source_analyzer import find_module_classes
 from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource, model_input_from_sample
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
 from app.reports.analyzer import build_run_report
+from app.reports.markdown import render_run_report_html, render_run_report_markdown
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
 from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
 from app.schemas import ImageSample, RunDetail, RunEvent
@@ -1016,6 +1017,30 @@ def get_run_report(run_id: str):
     if detail is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return build_run_report(run_store, detail)
+
+
+@app.get("/api/runs/{run_id}/report/export.md")
+def export_run_report_markdown(run_id: str):
+    detail = build_run_detail(run_store, run_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    report = build_run_report(run_store, detail)
+    markdown = render_run_report_markdown(detail, report)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{run_id}-report.md"'},
+    )
+
+
+@app.get("/api/runs/{run_id}/report/export.html")
+def export_run_report_html(run_id: str):
+    detail = build_run_detail(run_store, run_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    report = build_run_report(run_store, detail)
+    html = render_run_report_html(detail, report)
+    return Response(content=html, media_type="text/html; charset=utf-8")
 
 
 @app.get("/api/runs/{run_id}/stream")
