@@ -11,6 +11,8 @@ import apiHttpSource from "./api/http.ts?raw";
 import stageStatsSource from "./components/StageStats.tsx?raw";
 import motionSource from "./lib/motion.ts?raw";
 import layerHealthSource from "./lib/layerHealth.ts?raw";
+import trainingLoopSource from "./lib/trainingLoop.ts?raw";
+import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
 
 describe("App workspace layout", () => {
   it("does not render the right-side layer inspector panel", () => {
@@ -151,5 +153,14 @@ describe("App workspace layout", () => {
     expect(modelGraphSource).toContain("formatNodeShape");
     expect(modelGraphSource).toContain("node-health");
     expect(modelGraphSource).toContain("node-shape");
+  });
+
+  it("adds a training loop strip to Ops", () => {
+    expect(trainingLoopSource).toContain("deriveTrainingLoopStages");
+    expect(trainingLoopSource).toContain("Data");
+    expect(trainingLoopSource).toContain("Forward");
+    expect(trainingLoopSource).toContain("Backward");
+    expect(trainingLoopStripSource).toContain("training-loop-strip");
+    expect(appSource).toContain("TrainingLoopStrip");
   });
 });

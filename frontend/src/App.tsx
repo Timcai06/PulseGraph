@@ -20,6 +20,7 @@ import { InferenceProbe } from "./components/InferenceProbe";
 import { RunDetailPanel } from "./components/RunDetailPanel";
 import { HistoryPage } from "./components/HistoryPage";
 import { StageStats } from "./components/StageStats";
+import { TrainingLoopStrip } from "./components/TrainingLoopStrip";
 import { useRunStream } from "./hooks/useRunStream";
 import { useReducedMotion } from "./hooks/useReducedMotion";
 import type { Theme } from "./lib/chartTheme";
@@ -29,6 +30,7 @@ import { firstDisplayNode } from "./lib/graphView";
 import { displayClassName } from "./lib/inferenceView";
 import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
+import { deriveTrainingLoopStages } from "./lib/trainingLoop";
 
 gsap.registerPlugin(useGSAP);
 
@@ -353,6 +355,17 @@ export default function App() {
   const predictionSummary = prediction
     ? `${displayClassName(prediction.prediction, prediction.class_names)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
     : "";
+  const loopStages = useMemo(
+    () =>
+      deriveTrainingLoopStages({
+        hasResource: Boolean(sourceRecipe),
+        hasGraph: graph.nodes.length > 0,
+        hasPrediction: Boolean(prediction),
+        metrics: stream.metrics,
+        events: stream.events
+      }),
+    [sourceRecipe, graph.nodes.length, prediction, stream.metrics, stream.events]
+  );
 
   return (
     <main className="app-shell" ref={shellRef}>
@@ -375,6 +388,7 @@ export default function App() {
 
       {page === "monitor" ? (
         <div className="stage">
+          <TrainingLoopStrip stages={loopStages} />
           <ModelGraphPanel
             graph={graph}
             selectedNodeId={selectedNode?.id}

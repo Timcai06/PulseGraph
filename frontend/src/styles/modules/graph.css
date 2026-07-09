@@ -19,6 +19,55 @@
   background: transparent;
 }
 
+.training-loop-strip {
+  position: absolute;
+  top: calc(var(--topbar-h) + 16px);
+  right: 16px;
+  left: calc(var(--rail-w) + 30px);
+  z-index: 6;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.loop-stage {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(16px);
+}
+
+.loop-stage span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.loop-stage strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loop-stage.active {
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.loop-stage.healthy {
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+.loop-stage.warning {
+  border-color: rgba(248, 113, 113, 0.55);
+}
+
 /* Floating pill toolbar inside the stage */
 .stage-toolbar {
   position: absolute;
