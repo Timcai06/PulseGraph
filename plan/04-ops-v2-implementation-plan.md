@@ -344,12 +344,14 @@ Add source imports and assertions:
 import trainingLoopSource from "./lib/trainingLoop.ts?raw";
 import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
 
-it("adds a training loop strip to Ops", () => {
+it("keeps the training loop in an integrated top drawer", () => {
   expect(trainingLoopSource).toContain("deriveTrainingLoopStages");
   expect(trainingLoopSource).toContain("Data");
   expect(trainingLoopSource).toContain("Forward");
   expect(trainingLoopSource).toContain("Backward");
-  expect(trainingLoopStripSource).toContain("training-loop-strip");
+  expect(trainingLoopStripSource).toContain("top-training-drawer");
+  expect(trainingLoopStripSource).toContain("training-loop-handle");
+  expect(trainingLoopStripSource).toContain("training-loop-drawer-body");
   expect(appSource).toContain("TrainingLoopStrip");
 });
 ```
@@ -441,7 +443,10 @@ export function deriveTrainingLoopStages(input: Input): TrainingLoopStage[] {
 
 - [x] **Step 4: Create `TrainingLoopStrip.tsx`**
 
+Updated direction: the training-loop surface should follow the same product pattern as the bottom Telemetry drawer. It is no longer a persistent row of separate top cards. The default state is a compact integrated handle; expanding the drawer reveals the Data / Forward / Loss / Backward / Optimizer / Checkpoint / Eval stages and the selected stage explanation inside the same surface.
+
 ```tsx
+import { useState } from "react";
 import type { TrainingLoopStage } from "../lib/trainingLoop";
 
 type Props = {
@@ -449,14 +454,21 @@ type Props = {
 };
 
 export function TrainingLoopStrip({ stages }: Props) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
-    <section className="training-loop-strip" aria-label="training loop">
-      {stages.map((stage) => (
-        <article className={`loop-stage ${stage.state}`} key={stage.id}>
-          <span>{stage.label}</span>
-          <strong>{stage.detail}</strong>
-        </article>
-      ))}
+    <section className={`top-training-drawer ${drawerOpen ? "open" : ""}`} aria-label="training loop drawer">
+      <button className="training-loop-handle" aria-expanded={drawerOpen} onClick={() => setDrawerOpen((open) => !open)} type="button">
+        Training Loop
+      </button>
+      <div className="training-loop-drawer-body" aria-hidden={!drawerOpen}>
+        {stages.map((stage) => (
+          <button className={`loop-stage ${stage.state}`} key={stage.id} type="button">
+            <span>{stage.label}</span>
+            <strong>{stage.detail}</strong>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -494,15 +506,34 @@ Render above `ModelGraphPanel`:
 Add to `frontend/src/styles/modules/graph.css`:
 
 ```css
-.training-loop-strip {
+.top-training-drawer {
   position: absolute;
-  top: 18px;
-  right: 18px;
-  left: 18px;
-  z-index: 6;
+  top: calc(var(--topbar-h) + 12px);
+  right: 16px;
+  left: calc(var(--rail-w) + 30px);
+  z-index: 34;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-rows: 42px auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+}
+
+.training-loop-handle {
+  border: 0;
+  background: transparent;
+}
+
+.training-loop-drawer-body {
+  display: none;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.38fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.top-training-drawer.open .training-loop-drawer-body {
+  display: grid;
 }
 
 .loop-stage {

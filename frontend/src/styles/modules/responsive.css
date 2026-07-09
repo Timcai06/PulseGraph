@@ -48,6 +48,8 @@
   .page-tabs,
   .control-rail,
   .graph-stage,
+  .top-training-drawer,
+  .graph-layer-detail-drawer,
   .bottom-dock,
   .history-page {
     position: static;
@@ -81,6 +83,24 @@
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-xl);
     overflow: hidden;
+  }
+
+  .top-training-drawer {
+    display: grid;
+    box-shadow: none;
+  }
+
+  .training-loop-drawer-body {
+    grid-template-columns: 1fr;
+  }
+
+  .loop-stage-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .graph-layer-detail-drawer {
+    max-height: none;
+    overflow: visible;
   }
 
   .stage-toolbar {

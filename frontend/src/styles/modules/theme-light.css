@@ -58,15 +58,17 @@
 }
 
 [data-theme="light"] .loop-stage {
-  background: rgba(255, 255, 255, 0.82);
+  background: #ffffff;
+  border-color: rgba(100, 116, 139, 0.22);
 }
 
 [data-theme="light"] .loop-stage:hover,
 [data-theme="light"] .loop-stage.open {
-  background: rgba(255, 255, 255, 0.96);
+  background: #f0f9ff;
 }
 
-[data-theme="light"] .stage-detail-panel,
+[data-theme="light"] .top-training-drawer,
+[data-theme="light"] .stage-drawer-panel,
 [data-theme="light"] .layer-inspector {
   background: rgba(255, 255, 255, 0.94);
 }

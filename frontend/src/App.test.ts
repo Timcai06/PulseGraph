@@ -159,14 +159,17 @@ describe("App workspace layout", () => {
     expect(modelGraphSource).toContain("node-shape");
   });
 
-  it("adds a training loop strip to Ops", () => {
+  it("keeps the training loop in an integrated top drawer", () => {
     expect(trainingLoopSource).toContain("deriveTrainingLoopStages");
     expect(trainingLoopSource).toContain("Data");
     expect(trainingLoopSource).toContain("Forward");
     expect(trainingLoopSource).toContain("Backward");
-    expect(trainingLoopStripSource).toContain("training-loop-strip");
-    expect(trainingLoopStripSource).toContain("stage-detail-panel");
+    expect(trainingLoopStripSource).toContain("top-training-drawer");
+    expect(trainingLoopStripSource).toContain("training-loop-handle");
+    expect(trainingLoopStripSource).toContain("training-loop-drawer-body");
+    expect(trainingLoopStripSource).toContain("drawerOpen");
     expect(trainingLoopStripSource).toContain("aria-expanded");
+    expect(trainingLoopStripSource).not.toContain("stage-detail-panel");
     expect(trainingLoopStripSource).toContain("activeStageId");
     expect(appSource).toContain("TrainingLoopStrip");
   });
