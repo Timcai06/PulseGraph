@@ -126,6 +126,58 @@ RGB_REPORT_RESOURCE_SOURCE = textwrap.dedent(
     """
 )
 
+PACKAGE_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+
+    from models.cifar import TinyPackagedNet
+
+
+    def metadata():
+        return {
+            "name": "packaged_rgb_resource",
+            "classes": 3,
+            "class_names": ["red", "green", "blue"],
+            "input_shape": [3, 2, 2],
+            "batch_size": 4,
+        }
+
+
+    def build_model():
+        return TinyPackagedNet()
+
+
+    def train_batch(step, batch_size):
+        images = torch.zeros(batch_size, 3, 2, 2)
+        labels = torch.arange(batch_size) % 3
+        for row, label in enumerate(labels):
+            images[row, label, :, :] = 1.0
+        return images, labels
+
+
+    def inference_sample(index):
+        image = torch.zeros(3, 2, 2)
+        label = index % 3
+        image[label, :, :] = 1.0
+        return image, label
+    """
+)
+
+PACKAGE_MODEL_SOURCE = textwrap.dedent(
+    """
+    from torch import nn
+
+
+    class TinyPackagedNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Sequential(nn.Flatten(), nn.Linear(12, 3))
+
+        def forward(self, images):
+            return self.net(images)
+    """
+)
+
 BAD_CLASS_NAMES_SOURCE = RGB_RESOURCE_SOURCE.replace(
     '"class_names": ["red", "green", "blue"]',
     '"class_names": ["red", "green"]',
@@ -311,6 +363,28 @@ def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None
     assert forward["class_names"] == ["red", "green", "blue"]
     assert forward["image_shape"] == [3, 2, 2]
     assert len(forward["image_pixels"]) == 12
+
+
+def test_train_resource_endpoint_accepts_folder_upload_with_package_imports() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[
+            ("files", ("cifar_rgb/resource.py", PACKAGE_RESOURCE_SOURCE.encode(), "text/x-python")),
+            ("files", ("cifar_rgb/models/__init__.py", b"from models.cifar import TinyPackagedNet\n", "text/x-python")),
+            ("files", ("cifar_rgb/models/cifar.py", PACKAGE_MODEL_SOURCE.encode(), "text/x-python")),
+        ],
+        data={"entry_file": "resource.py", "steps": "1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    run_id = payload["run_id"]
+    assert payload["entry_file"] == "cifar_rgb/resource.py"
+    assert payload["resource"]["name"] == "packaged_rgb_resource"
+
+    forward = client.get(f"/api/runs/{run_id}/forward?index=2").json()
+    assert forward["label"] == 2
+    assert forward["class_names"] == ["red", "green", "blue"]
 
 
 def test_resource_report_contains_named_rgb_misclassified_samples() -> None:

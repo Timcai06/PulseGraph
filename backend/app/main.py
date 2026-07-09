@@ -703,6 +703,10 @@ def _resolve_entry_file(requested: str, collected: list[tuple[str, str]]) -> str
     normalized = requested.replace("\\", "/")
     if normalized in names:
         return normalized
+    if "/" not in normalized:
+        leaf_matches = [name for name in names if name.rsplit("/", 1)[-1] == normalized]
+        if len(leaf_matches) == 1:
+            return leaf_matches[0]
     root_candidates = [name for name in names if "/" not in name]
     for preferred in ("resource.py", "main.py", "train.py"):
         if preferred in root_candidates:

@@ -81,6 +81,10 @@ describe("App workspace layout", () => {
   });
 
   it("shows resource preview samples and named report mistakes", () => {
+    expect(controlRailSource).toContain("webkitRelativePath");
+    expect(controlRailSource).toContain("Import Folder");
+    expect(controlRailSource).toContain("folder-drop");
+    expect(appSource).toContain("preferredResourceEntry");
     expect(controlRailSource).toContain("resource-samples");
     expect(controlRailSource).toContain("label_name");
     expect(controlRailSource).toContain("ImagePreview");

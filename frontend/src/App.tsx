@@ -82,6 +82,10 @@ type SourceRecipe = {
 
 type CurrentRunKind = "resource-training" | "source-training" | "recorded-training";
 
+function preferredResourceEntry(files: NamedSourceFile[]): string | undefined {
+  return files.find((file) => file.path === "resource.py" || file.path.endsWith("/resource.py"))?.path ?? files[0]?.path;
+}
+
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
   const [graph, setGraph] = useState<ModelGraph>(emptyGraph);
@@ -230,7 +234,7 @@ export default function App() {
     setSelectedGhostEdgeId(undefined);
     setBusy("resource");
     setErrorMessage(undefined);
-    const entryFile = files[0]?.path;
+    const entryFile = preferredResourceEntry(files);
     if (!entryFile) {
       setErrorMessage("Upload a Python resource before training.");
       setBusy(undefined);

@@ -238,8 +238,11 @@ def _mnist_sample(index: int) -> tuple[torch.Tensor, int]:
 
 def _load_module(source_path: Path, source_root: Path | None = None) -> Any:
     module_name = f"pulsegraph_resource_{uuid.uuid4().hex[:8]}"
-    root = str(source_root or source_path.parent)
-    sys.path.insert(0, root)
+    import_roots = [str(source_path.parent)]
+    if source_root is not None and str(source_root) not in import_roots:
+        import_roots.append(str(source_root))
+    for root in reversed(import_roots):
+        sys.path.insert(0, root)
     try:
         spec = importlib.util.spec_from_file_location(module_name, source_path)
         if spec is None or spec.loader is None:
@@ -253,16 +256,16 @@ def _load_module(source_path: Path, source_root: Path | None = None) -> Any:
     except ModuleNotFoundError as exc:
         raise ResourceContractError(
             f"The resource imports '{exc.name}', which is not part of the upload. "
-            "Upload a .zip that contains the package with its folder structure "
-            "(picking multiple files in the browser loses directories), "
+            "Upload a folder or .zip that contains the package with its folder structure, "
             "or inline the dependency into the entry file."
         ) from exc
     except Exception as exc:
         raise ResourceContractError(f"Executing the resource module failed: {exc}") from exc
     finally:
         sys.modules.pop(module_name, None)
-        if root in sys.path:
-            sys.path.remove(root)
+        for root in import_roots:
+            if root in sys.path:
+                sys.path.remove(root)
 
 
 def load_training_resource(source_path: Path, source_root: Path | None = None) -> LoadedTrainingResource:

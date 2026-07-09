@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dumbbell,
   FileCheck2,
   FileCode2,
+  FolderOpen,
   Info,
   Loader2,
   PanelLeftClose,
@@ -48,8 +49,15 @@ type Props = {
 function toNamedFiles(list: FileList | null): NamedSourceFile[] {
   if (!list) return [];
   return Array.from(list)
-    .filter((file) => file.name.endsWith(".py") || file.name.endsWith(".zip"))
-    .map((file) => ({ file, path: file.name }));
+    .map((file) => {
+      const path = (file.webkitRelativePath || file.name).replace(/\\/g, "/");
+      return { file, path, folderFile: Boolean(file.webkitRelativePath) };
+    })
+    .filter(({ path, folderFile }) => {
+      const lower = path.toLowerCase();
+      return lower.endsWith(".py") || (!folderFile && lower.endsWith(".zip"));
+    })
+    .map(({ file, path }) => ({ file, path }));
 }
 
 export function ControlRail({
@@ -78,7 +86,15 @@ export function ControlRail({
   const [railDrawerOpen, setRailDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLElement | null>(null);
   const handleRef = useRef<HTMLButtonElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    const input = folderInputRef.current;
+    if (!input) return;
+    input.setAttribute("directory", "");
+    input.setAttribute("webkitdirectory", "");
+  }, []);
 
   useGSAP(
     () => {
@@ -137,6 +153,23 @@ export function ControlRail({
               }}
             />
           </label>
+          {!loadedResource && (
+            <label className={`file-drop compact-drop folder-drop ${busy === "resource" ? "busy" : ""}`}>
+              <FolderOpen size={17} />
+              <span>Import Folder</span>
+              <input
+                type="file"
+                multiple
+                disabled={busy === "resource"}
+                ref={folderInputRef}
+                onChange={(event) => {
+                  const files = toNamedFiles(event.target.files);
+                  if (files.length) onResourceUpload(files);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          )}
           {loadedResource && (
             <>
               <p className="drop-meta">
