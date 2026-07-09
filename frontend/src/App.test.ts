@@ -13,6 +13,7 @@ import motionSource from "./lib/motion.ts?raw";
 import layerHealthSource from "./lib/layerHealth.ts?raw";
 import trainingLoopSource from "./lib/trainingLoop.ts?raw";
 import trainingLoopStripSource from "./components/TrainingLoopStrip.tsx?raw";
+import layerInspectorSource from "./components/LayerInspector.tsx?raw";
 
 describe("App workspace layout", () => {
   it("does not render the right-side layer inspector panel", () => {
@@ -162,5 +163,13 @@ describe("App workspace layout", () => {
     expect(trainingLoopSource).toContain("Backward");
     expect(trainingLoopStripSource).toContain("training-loop-strip");
     expect(appSource).toContain("TrainingLoopStrip");
+  });
+
+  it("adds a selected layer inspector to Ops", () => {
+    expect(layerInspectorSource).toContain("LayerInspector");
+    expect(layerInspectorSource).toContain("activation_sparsity");
+    expect(layerInspectorSource).toContain("gradient_norm");
+    expect(controlRailSource).toContain("selectedNode");
+    expect(controlRailSource).toContain("layer-inspector");
   });
 });

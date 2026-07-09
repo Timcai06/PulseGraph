@@ -366,6 +366,8 @@ export default function App() {
       }),
     [sourceRecipe, graph.nodes.length, prediction, stream.metrics, stream.events]
   );
+  const selectedLayerHistory = selectedNode ? stream.layerHistory[selectedNode.id] ?? [] : [];
+  const selectedLayerEvents = selectedNode ? stream.events.filter((event) => event.layer === selectedNode.id) : [];
 
   return (
     <main className="app-shell" ref={shellRef}>
@@ -423,6 +425,10 @@ export default function App() {
             hasPrediction={Boolean(prediction)}
             liveRuns={runBuckets.active}
             watchedRunId={stream.runId}
+            selectedNode={selectedNode}
+            selectedSnapshot={selectedNode ? stream.layerSnapshots[selectedNode.id] : undefined}
+            selectedHistory={selectedLayerHistory}
+            selectedEvents={selectedLayerEvents}
             busy={busy}
             errorMessage={errorMessage}
           />

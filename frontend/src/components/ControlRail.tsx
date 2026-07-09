@@ -1,7 +1,9 @@
 import { Dumbbell, FileCheck2, FileCode2, Info, Loader2, Radio, RotateCcw, Zap } from "lucide-react";
-import type { NamedSourceFile, RunSummary } from "../api/client";
+import type { GraphNode, LayerSnapshot, NamedSourceFile, RunEvent, RunSummary } from "../api/client";
+import type { LayerHistoryPoint } from "../hooks/useRunStream";
 import type { LoadedResourceSummary } from "../App";
 import { ImagePreview } from "./ImagePreview";
+import { LayerInspector } from "./LayerInspector";
 
 type Props = {
   onResourceUpload: (files: NamedSourceFile[]) => void;
@@ -23,6 +25,10 @@ type Props = {
   hasPrediction: boolean;
   liveRuns: RunSummary[];
   watchedRunId?: string;
+  selectedNode?: GraphNode;
+  selectedSnapshot?: LayerSnapshot;
+  selectedHistory: LayerHistoryPoint[];
+  selectedEvents: RunEvent[];
   busy?: "resource" | "train" | "forward";
   errorMessage?: string;
 };
@@ -54,6 +60,10 @@ export function ControlRail({
   hasPrediction,
   liveRuns,
   watchedRunId,
+  selectedNode,
+  selectedSnapshot,
+  selectedHistory,
+  selectedEvents,
   busy,
   errorMessage
 }: Props) {
@@ -165,6 +175,10 @@ export function ControlRail({
           </div>
         </dl>
       </section>
+
+      <div className="layer-inspector-slot">
+        <LayerInspector node={selectedNode} snapshot={selectedSnapshot} history={selectedHistory} events={selectedEvents} />
+      </div>
 
       <section>
         <h2>Inference</h2>
