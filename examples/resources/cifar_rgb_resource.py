@@ -1,8 +1,8 @@
-"""Self-contained RGB classification resource for PulseGraph verification.
+"""Self-contained RGB pattern classification resource for PulseGraph verification.
 
 Upload this file directly, or zip the examples/resources folder. It uses
-deterministic CIFAR-sized synthetic images so the workflow does not depend on
-network access.
+deterministic 32x32 RGB pattern images so the workflow does not depend on
+network access or pretend to use real-world CIFAR photos.
 """
 
 from __future__ import annotations
@@ -11,16 +11,16 @@ import torch
 from torch import nn
 
 CLASS_NAMES = [
-    "airplane",
-    "automobile",
-    "bird",
-    "cat",
-    "deer",
-    "dog",
-    "frog",
-    "horse",
-    "ship",
-    "truck",
+    "pattern_00",
+    "pattern_01",
+    "pattern_02",
+    "pattern_03",
+    "pattern_04",
+    "pattern_05",
+    "pattern_06",
+    "pattern_07",
+    "pattern_08",
+    "pattern_09",
 ]
 
 
@@ -44,13 +44,13 @@ class CifarRgbExampleNet(nn.Module):
 
 def metadata() -> dict:
     return {
-        "name": "cifar_rgb_example",
+        "name": "rgb_pattern_example",
         "classes": len(CLASS_NAMES),
         "class_names": CLASS_NAMES,
         "input_shape": [3, 32, 32],
         "batch_size": 16,
         "learning_rate": 1e-3,
-        "data_source": "synthetic-cifar-rgb",
+        "data_source": "synthetic-rgb-patterns",
         "sample_source": "probe",
     }
 
