@@ -3,12 +3,84 @@ import { Handle, Position, ReactFlow, Controls, type Edge, type Node, type NodeP
 import dagre from "@dagrejs/dagre";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";
+import { MotionPathPlugin } from "gsap/MotionPathPlugin";
 import type { GraphNode, ModelGraph } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { incomingEdges, orderEdgesForSweep } from "../lib/edgeSignal";
 import { displayGraph } from "../lib/graphView";
 import { NeuralNetworkView } from "./NeuralNetworkView";
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, DrawSVGPlugin, MotionPathPlugin);
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const SIGNAL_EDGE_SECONDS = 0.42;
+
+function edgePathData(container: HTMLElement, edgeId: string): string | null {
+  const group = container.querySelector(`.react-flow__edge[data-id="${CSS.escape(edgeId)}"]`);
+  const path = group?.querySelector<SVGPathElement>(".react-flow__edge-path");
+  return path?.getAttribute("d") ?? null;
+}
+
+/**
+ * Signals live in an overlay svg we own inside the React Flow viewport:
+ * appending them into the React-managed edge groups doesn't survive re-renders
+ * (React Flow rebuilds edge elements when the graph prop changes), while the
+ * viewport element itself is stable and carries the pan/zoom transform.
+ */
+function ensureSignalLayer(container: HTMLElement): SVGSVGElement | null {
+  const viewport = container.querySelector<HTMLElement>(".react-flow__viewport");
+  if (!viewport) return null;
+  let layer = viewport.querySelector<SVGSVGElement>(":scope > .signal-layer");
+  if (!layer) {
+    layer = document.createElementNS(SVG_NS, "svg");
+    layer.setAttribute("class", "signal-layer");
+    layer.setAttribute("width", "1");
+    layer.setAttribute("height", "1");
+    viewport.appendChild(layer);
+  }
+  return layer;
+}
+
+function pulseNode(container: HTMLElement, nodeId: string, strong = false) {
+  const target = container.querySelector(`[data-layer-id="${CSS.escape(nodeId)}"]`);
+  if (!target) return;
+  gsap.fromTo(
+    target,
+    { scale: 1, boxShadow: "0 0 0 rgba(79, 209, 197, 0)" },
+    {
+      scale: strong ? 1.1 : 1.06,
+      boxShadow: `0 0 ${strong ? 44 : 30}px rgba(79, 209, 197, ${strong ? 0.75 : 0.55})`,
+      yoyo: true,
+      repeat: 1,
+      duration: strong ? 0.34 : 0.28,
+      ease: "power2.out"
+    }
+  );
+}
+
+/** Comet along an edge: a glow trail drawn tip-first, optionally with an orb riding the path. */
+function launchEdgeSignal(timeline: gsap.core.Timeline, layer: SVGSVGElement, pathData: string, at: number, withOrb: boolean) {
+  const seconds = SIGNAL_EDGE_SECONDS;
+
+  const glow = document.createElementNS(SVG_NS, "path");
+  glow.setAttribute("d", pathData);
+  glow.setAttribute("class", "signal-path");
+  layer.appendChild(glow);
+  timeline
+    .fromTo(glow, { drawSVG: "0% 0%" }, { drawSVG: "0% 100%", duration: seconds, ease: "power1.in" }, at)
+    .to(glow, { drawSVG: "100% 100%", duration: seconds * 0.55, ease: "power1.out", onComplete: () => glow.remove() }, at + seconds);
+
+  if (!withOrb) return;
+  const orb = document.createElementNS(SVG_NS, "circle");
+  orb.setAttribute("class", "signal-orb");
+  orb.setAttribute("r", "4.5");
+  layer.appendChild(orb);
+  timeline
+    .fromTo(orb, { opacity: 0 }, { opacity: 1, duration: 0.08 }, at)
+    .to(orb, { motionPath: { path: pathData }, duration: seconds, ease: "power1.in" }, at)
+    .to(orb, { opacity: 0, duration: 0.14, onComplete: () => orb.remove() }, at + seconds - 0.04);
+}
 
 const NODE_WIDTH = 178;
 const NODE_HEIGHT = 96;
@@ -48,11 +120,14 @@ type Props = {
   selectedNodeId?: string;
   pulsedNodeId?: string;
   probabilities?: number[];
+  /* increments on every applied forward pass; triggers the full-path signal sweep */
+  forwardTick: number;
   onSelect: (node: GraphNode) => void;
 };
 
-export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, onSelect }: Props) {
+export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, forwardTick, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const sweepRef = useRef<gsap.core.Timeline | null>(null);
   const reducedMotion = useReducedMotion();
   const [viewMode, setViewMode] = useState<"ops" | "neurons">("ops");
   const visibleGraph = useMemo(() => displayGraph(graph), [graph]);
@@ -73,28 +148,58 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      animated: !reducedMotion && Boolean(pulsedNodeId),
       className: "pulse-edge"
     }));
-  }, [visibleGraph.edges, pulsedNodeId, reducedMotion]);
+  }, [visibleGraph.edges]);
 
+  // per-snapshot pulse during training: node glow + comet on its incoming edges
   useGSAP(() => {
-    if (!pulsedNodeId || reducedMotion || viewMode !== "ops") return;
-    const target = containerRef.current?.querySelector(`[data-layer-id="${pulsedNodeId}"]`);
-    if (!target) return;
-    gsap.fromTo(
-      target,
-      { scale: 1, boxShadow: "0 0 0 rgba(79, 209, 197, 0)" },
-      {
-        scale: 1.06,
-        boxShadow: "0 0 30px rgba(79, 209, 197, 0.55)",
-        yoyo: true,
-        repeat: 1,
-        duration: 0.28,
-        ease: "power2.out"
-      }
-    );
+    const container = containerRef.current;
+    if (!pulsedNodeId || !container || reducedMotion || viewMode !== "ops") return;
+    if (sweepRef.current?.isActive()) return; // the forward sweep already animates arrivals
+    pulseNode(container, pulsedNodeId);
+    const layer = ensureSignalLayer(container);
+    if (!layer) return;
+    const timeline = gsap.timeline();
+    for (const edge of incomingEdges(visibleGraph, pulsedNodeId)) {
+      const pathData = edgePathData(container, edge.id);
+      if (pathData) launchEdgeSignal(timeline, layer, pathData, 0, false);
+    }
   }, { dependencies: [pulsedNodeId, reducedMotion, viewMode], scope: containerRef });
+
+  // forward pass: signal travels the whole graph, layer by layer, into the output
+  useGSAP(() => {
+    const container = containerRef.current;
+    if (!forwardTick || !container || reducedMotion || viewMode !== "ops") return;
+    sweepRef.current?.kill();
+    container.querySelectorAll(".signal-path, .signal-orb").forEach((el) => el.remove());
+    const layer = ensureSignalLayer(container);
+    if (!layer) return;
+
+    const levels = orderEdgesForSweep(visibleGraph);
+    if (!levels.length) return;
+    const timeline = gsap.timeline({ onComplete: () => (sweepRef.current = null) });
+    let at = 0;
+    for (const [index, level] of levels.entries()) {
+      const arrived = new Set(level.map((edge) => edge.target));
+      let launched = false;
+      for (const edge of level) {
+        const pathData = edgePathData(container, edge.id);
+        if (!pathData) continue;
+        launchEdgeSignal(timeline, layer, pathData, at, true);
+        launched = true;
+      }
+      if (!launched) continue;
+      const lastLevel = index === levels.length - 1;
+      timeline.call(
+        () => arrived.forEach((nodeId) => pulseNode(container, nodeId, lastLevel)),
+        undefined,
+        at + SIGNAL_EDGE_SECONDS
+      );
+      at += SIGNAL_EDGE_SECONDS * 0.92;
+    }
+    sweepRef.current = timeline;
+  }, { dependencies: [forwardTick], scope: containerRef });
 
   const handleSelectLayer = (nodeId: string) => {
     const node = visibleGraph.nodes.find((item) => item.id === nodeId);

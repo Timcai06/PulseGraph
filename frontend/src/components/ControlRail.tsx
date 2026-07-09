@@ -1,8 +1,10 @@
-import { Dumbbell, FileCode2, Info, Loader2, Radio, RotateCcw, Zap } from "lucide-react";
+import { Dumbbell, FileCheck2, FileCode2, Info, Loader2, Radio, RotateCcw, Zap } from "lucide-react";
 import type { NamedSourceFile, RunSummary } from "../api/client";
+import type { LoadedResourceSummary } from "../App";
 
 type Props = {
   onResourceUpload: (files: NamedSourceFile[]) => void;
+  loadedResource?: LoadedResourceSummary;
   onRunTraining: () => void;
   onRunForward: () => void;
   onReset: () => void;
@@ -33,6 +35,7 @@ function toNamedFiles(list: FileList | null): NamedSourceFile[] {
 
 export function ControlRail({
   onResourceUpload,
+  loadedResource,
   onRunTraining,
   onRunForward,
   onReset,
@@ -57,9 +60,26 @@ export function ControlRail({
     <aside className="control-rail">
       <section>
         <h2>Training Resource</h2>
-        <label className={`file-drop primary-drop ${busy === "resource" ? "busy" : ""}`}>
-          {busy === "resource" ? <Loader2 size={18} className="spin" /> : <FileCode2 size={18} />}
-          <span>{busy === "resource" ? "Loading…" : "Import .py / .zip"}</span>
+        <label className={`file-drop primary-drop ${busy === "resource" ? "busy" : ""} ${loadedResource ? "loaded" : ""}`}>
+          {busy === "resource" ? (
+            <Loader2 size={18} className="spin" />
+          ) : loadedResource ? (
+            <FileCheck2 size={18} />
+          ) : (
+            <FileCode2 size={18} />
+          )}
+          {busy === "resource" ? (
+            <span>Analyzing…</span>
+          ) : loadedResource ? (
+            <span className="drop-loaded">
+              <strong>{loadedResource.name}</strong>
+              <em>
+                {loadedResource.fileCount} file{loadedResource.fileCount === 1 ? "" : "s"} · click to replace
+              </em>
+            </span>
+          ) : (
+            <span>Import .py / .zip</span>
+          )}
           <input
             type="file"
             multiple
@@ -72,6 +92,14 @@ export function ControlRail({
             }}
           />
         </label>
+        {loadedResource && (
+          <p className="drop-meta">
+            {loadedResource.inputShape?.length ? loadedResource.inputShape.join("×") : "?"}
+            {" → "}
+            {loadedResource.classes ?? "?"} classes
+            {loadedResource.dataSource ? ` · ${loadedResource.dataSource}` : ""}
+          </p>
+        )}
         <label className="number-field">
           <span>Training Steps</span>
           <input

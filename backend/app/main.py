@@ -581,7 +581,7 @@ async def train_run_from_resource(
         raise HTTPException(status_code=400, detail="No Python resource files were found in the upload.")
 
     run_id = f"resource-{uuid.uuid4().hex[:12]}"
-    normalized_entry = entry_file.replace("\\", "/")
+    normalized_entry = _resolve_entry_file(entry_file, collected)
     saved = run_store.save_source_files(run_id, collected, normalized_entry, "TrainingResource")
     if normalized_entry not in saved:
         raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
@@ -596,6 +596,8 @@ async def train_run_from_resource(
         example_input = _as_model_input(resource.inference_sample(0)[0])
     except ResourceContractError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
 
     try:
         graph = trace_model_graph(model, example_input)
@@ -657,6 +659,73 @@ async def analyze_source_candidates(files: list[UploadFile] = File(...)):
     if not collected:
         raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
     return {"files": [path for path, _ in collected], "candidates": find_module_classes(dict(collected))}
+
+
+def _resolve_entry_file(requested: str, collected: list[tuple[str, str]]) -> str:
+    """Map the requested entry to a collected file. A .zip upload names the
+    archive rather than a file inside it, so fall back to conventional roots."""
+    names = [path for path, _ in collected]
+    normalized = requested.replace("\\", "/")
+    if normalized in names:
+        return normalized
+    root_candidates = [name for name in names if "/" not in name]
+    for preferred in ("resource.py", "main.py", "train.py"):
+        if preferred in root_candidates:
+            return preferred
+    if len(root_candidates) == 1:
+        return root_candidates[0]
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Could not determine the entry file for '{requested}'. "
+            f"Uploaded files: {', '.join(names[:8])}{'…' if len(names) > 8 else ''}. "
+            "Name the entry file resource.py or place a single .py at the archive root."
+        ),
+    )
+
+
+@app.post("/api/inspect/resource/preview")
+async def preview_training_resource(files: list[UploadFile] = File(...), entry_file: str = Form(...)):
+    """Load and fx-trace an uploaded training resource without creating a run,
+    so the UI can show the operator graph immediately on import."""
+    collected = await _collect_source_files(files)
+    if not collected:
+        raise HTTPException(status_code=400, detail="No Python resource files were found in the upload.")
+    normalized_entry = _resolve_entry_file(entry_file, collected)
+
+    with tempfile.TemporaryDirectory(prefix="pulsegraph-preview-") as tmp:
+        root = Path(tmp)
+        for rel_path, content in collected:
+            target = root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        try:
+            resource = load_training_resource(root / normalized_entry, source_root=root)
+            model = resource.build_model()
+            example_input = _as_model_input(resource.inference_sample(0)[0])
+        except ResourceContractError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
+        try:
+            graph = trace_model_graph(model, example_input)
+        except Exception:
+            graph = build_graph_from_tensor_specs(
+                [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
+            )
+
+    return {
+        "resource": {
+            "name": resource.name,
+            "input_shape": resource.input_shape,
+            "classes": resource.classes,
+            "data_source": resource.metadata.get("data_source"),
+            "sample_source": resource.sample_source,
+        },
+        "files": [path for path, _ in collected],
+        "entry_file": normalized_entry,
+        "graph": graph.model_dump(),
+    }
 
 
 @app.post("/api/runs/from-source")

@@ -71,13 +71,17 @@
   grid-template-rows: auto 1fr;
 }
 
+.bottom-dock.open .dock-handle {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
 .panel-heading {
-  min-height: 42px;
+  min-height: 38px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px 6px;
+  padding: 10px 14px 4px;
 }
 
 .panel-heading h2 {
@@ -86,8 +90,12 @@
 
 .panel-heading span {
   max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: right;
-  line-height: 1.35;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .chart-wrap {
@@ -95,7 +103,10 @@
   min-height: 0;
 }
 
-.chart,
+.chart {
+  height: 280px;
+}
+
 .prob-chart {
   height: 218px;
 }
@@ -122,8 +133,8 @@
   grid-template-columns: 166px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
-  padding: 12px 14px;
-  overflow: hidden;
+  padding: 12px 14px 16px;
+  overflow-y: auto;
 }
 
 .inference-body .prob-chart {
@@ -301,39 +312,77 @@
 
 .event-list {
   overflow: auto;
-  padding: 10px 12px;
+  padding: 6px 12px 14px;
 }
 
 .event {
-  border-left: 2px solid var(--cyan);
-  background: rgba(2, 6, 23, 0.36);
-  padding: 7px 9px;
-  border-radius: var(--radius-sm);
+  --event-color: var(--cyan);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
   font-size: 11px;
   color: var(--text-soft);
-  margin-bottom: 6px;
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
+  animation: event-enter 320ms ease;
+}
+
+@keyframes event-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+.event-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--event-color);
+  box-shadow: 0 0 7px var(--event-color);
+}
+
+.event-type {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.event-layer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.event-step {
+  margin-left: auto;
+  color: var(--text-muted);
 }
 
 .event.metric {
-  border-color: var(--green);
+  --event-color: var(--green);
 }
 
 .event.infra {
-  border-color: var(--cyan);
+  --event-color: var(--cyan);
 }
 
 .event.layer_snapshot {
-  border-color: var(--violet);
+  --event-color: var(--violet);
 }
 
-.event.checkpoint {
-  border-color: var(--teal);
+.event.checkpoint,
+.event.run_complete {
+  --event-color: var(--teal);
 }
 
 .event.warning {
-  border-color: var(--amber);
+  --event-color: var(--amber);
+  color: #fde68a;
 }
 
 .event pre {

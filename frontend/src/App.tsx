@@ -8,6 +8,7 @@ import {
   getDemoModel,
   getHealth,
   listRuns,
+  previewResource,
   runForward,
   trainResourceRun
 } from "./api/client";
@@ -18,6 +19,7 @@ import { MetricChart } from "./components/Charts";
 import { InferenceProbe } from "./components/InferenceProbe";
 import { RunDetailPanel } from "./components/RunDetailPanel";
 import { HistoryPage } from "./components/HistoryPage";
+import { StageStats } from "./components/StageStats";
 import { useRunStream } from "./hooks/useRunStream";
 import { useReducedMotion } from "./hooks/useReducedMotion";
 import type { Theme } from "./lib/chartTheme";
@@ -48,9 +50,18 @@ function initialTheme(): Theme {
   return saved === "light" ? "light" : "dark";
 }
 
+export type LoadedResourceSummary = {
+  name: string;
+  fileCount: number;
+  inputShape?: number[];
+  classes?: number;
+  dataSource?: string;
+};
+
 type SourceRecipe = {
   files: NamedSourceFile[];
   entryFile: string;
+  summary?: LoadedResourceSummary;
 };
 
 type CurrentRunKind = "resource-training" | "source-training" | "recorded-training";
@@ -65,6 +76,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [detailRunId, setDetailRunId] = useState<string | undefined>();
   const [detailInitialTab, setDetailInitialTab] = useState<"overview" | "source">("overview");
+  const [detailOrigin, setDetailOrigin] = useState<DOMRect | undefined>();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<"monitor" | "history">("monitor");
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
@@ -74,6 +86,7 @@ export default function App() {
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
   const [dockOpen, setDockOpen] = useState(false);
+  const [forwardTick, setForwardTick] = useState(0);
   const shellRef = useRef<HTMLElement | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
@@ -169,7 +182,7 @@ export default function App() {
   const latestStep = stream.metrics.length ? stream.metrics[stream.metrics.length - 1].step : 0;
   const runBuckets = useMemo(() => splitRunBuckets(liveRuns), [liveRuns]);
 
-  const handleResourceUpload = (files: NamedSourceFile[]) => {
+  const handleResourceUpload = async (files: NamedSourceFile[]) => {
     stream.reset();
     setBusy("resource");
     setErrorMessage(undefined);
@@ -179,12 +192,32 @@ export default function App() {
       setBusy(undefined);
       return;
     }
-    setSourceRecipe({ files, entryFile });
     setPrediction(undefined);
     setForwardTarget(undefined);
     setPendingForwardRun(undefined);
     setCurrentRunKind(undefined);
-    setBusy(undefined);
+    try {
+      // trace the resource right away so the operator graph appears on import
+      const preview = await previewResource(files, entryFile);
+      setGraph(preview.graph);
+      setSelectedNode(firstDisplayNode(preview.graph));
+      setSourceRecipe({
+        files,
+        entryFile,
+        summary: {
+          name: preview.resource.name,
+          fileCount: preview.files.length,
+          inputShape: preview.resource.input_shape ?? undefined,
+          classes: preview.resource.classes ?? undefined,
+          dataSource: preview.resource.data_source ?? undefined
+        }
+      });
+    } catch (error) {
+      setSourceRecipe(undefined);
+      setErrorMessage(error instanceof Error ? error.message : "Analyzing the resource failed.");
+    } finally {
+      setBusy(undefined);
+    }
   };
 
   const handleRunForward = async () => {
@@ -237,6 +270,7 @@ export default function App() {
   const applyPredictionResult = (result: PredictionResponse) => {
     setPrediction(result);
     setDockOpen(true);
+    setForwardTick((tick) => tick + 1);
     setGraph(result.graph);
     setSelectedNode(firstDisplayNode(result.graph));
     const lastNode = result.graph.nodes[result.graph.nodes.length - 1];
@@ -328,8 +362,10 @@ export default function App() {
             selectedNodeId={selectedNode?.id}
             pulsedNodeId={stream.pulsedNodeId}
             probabilities={prediction?.probabilities}
+            forwardTick={forwardTick}
             onSelect={setSelectedNode}
           />
+          <StageStats metrics={stream.metrics} />
           <ControlRail
             onResourceUpload={handleResourceUpload}
             onRunTraining={handleRunTraining}
@@ -338,9 +374,11 @@ export default function App() {
             onWatchRun={handleWatchRun}
             onOpenDetail={(runId) => {
               setDetailInitialTab("overview");
+              setDetailOrigin(undefined);
               setDetailRunId(runId);
             }}
             trainAvailable={Boolean(sourceRecipe)}
+            loadedResource={sourceRecipe?.summary}
             trainingSteps={trainingSteps}
             onTrainingStepsChange={(steps) => setTrainingSteps(Math.max(1, Math.min(500, Math.trunc(steps || 1))))}
             telemetryStride={telemetryStride}
@@ -355,7 +393,7 @@ export default function App() {
             busy={busy}
             errorMessage={errorMessage}
           />
-          <section className="bottom-dock" ref={dockRef}>
+          <section className={`bottom-dock ${dockOpen ? "open" : ""}`} ref={dockRef}>
             <button
               className="dock-handle"
               type="button"
@@ -388,13 +426,21 @@ export default function App() {
                   <span>{stream.events.length}</span>
                 </div>
                 <div className="event-list">
-                  {errorMessage && <div className="event warning">{errorMessage}</div>}
+                  {errorMessage && (
+                    <div className="event warning">
+                      <i className="event-dot" />
+                      <span className="event-layer">{errorMessage}</span>
+                    </div>
+                  )}
                   {stream.events.length === 0 && !errorMessage && (
                     <p className="empty-hint">No events</p>
                   )}
                   {stream.events.map((event) => (
                     <div className={`event ${event.type}`} key={event.event_id}>
-                      <strong>{event.type}</strong> step {event.step} {event.layer ? `· ${event.layer}` : ""}
+                      <i className="event-dot" />
+                      <span className="event-type">{event.type}</span>
+                      {event.layer && <span className="event-layer">{event.layer}</span>}
+                      <span className="event-step">step {event.step}</span>
                     </div>
                   ))}
                 </div>
@@ -407,8 +453,9 @@ export default function App() {
           runs={runBuckets.history}
           watchedRunId={stream.runId}
           onWatchRun={handleWatchRun}
-          onOpenDetail={(runId) => {
+          onOpenDetail={(runId, origin) => {
             setDetailInitialTab("overview");
+            setDetailOrigin(origin);
             setDetailRunId(runId);
           }}
           onDeleteRun={handleDeleteRun}
@@ -419,6 +466,7 @@ export default function App() {
         <RunDetailPanel
           runId={detailRunId}
           initialTab={detailInitialTab}
+          origin={detailOrigin}
           onClose={() => setDetailRunId(undefined)}
           onPrediction={(result) => {
             applyPredictionResult(result);

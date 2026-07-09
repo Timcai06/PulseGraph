@@ -185,6 +185,17 @@ def _load_module(source_path: Path, source_root: Path | None = None) -> Any:
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module
+    except ResourceContractError:
+        raise
+    except ModuleNotFoundError as exc:
+        raise ResourceContractError(
+            f"The resource imports '{exc.name}', which is not part of the upload. "
+            "Upload a .zip that contains the package with its folder structure "
+            "(picking multiple files in the browser loses directories), "
+            "or inline the dependency into the entry file."
+        ) from exc
+    except Exception as exc:
+        raise ResourceContractError(f"Executing the resource module failed: {exc}") from exc
     finally:
         sys.modules.pop(module_name, None)
         if root in sys.path:

@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileCode2, FlaskConical, Layers, Loader2, Play, X } from "lucide-react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import type { PredictionResponse, RunDetail, RunReport } from "../api/client";
 import { getRunDetail, getRunReport, runForward } from "../api/client";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import { SourceAttach } from "./SourceAttach";
+
+gsap.registerPlugin(useGSAP);
 
 type Tab = "overview" | "source" | "checkpoints" | "report";
 
 type Props = {
   runId: string;
   initialTab?: Tab;
+  /* card rect the panel visually grows out of (shared-element transition) */
+  origin?: DOMRect;
   onClose: () => void;
   onPrediction: (prediction: PredictionResponse) => void;
 };
@@ -28,8 +35,33 @@ function MiniDigit({ pixels }: { pixels?: number[] }) {
   );
 }
 
-export function RunDetailPanel({ runId, initialTab = "overview", onClose, onPrediction }: Props) {
+export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose, onPrediction }: Props) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const reducedMotion = useReducedMotion();
   const [tab, setTab] = useState<Tab>(initialTab);
+
+  useGSAP(() => {
+    const overlay = overlayRef.current;
+    const panel = panelRef.current;
+    if (!overlay || !panel || reducedMotion) return;
+    gsap.from(overlay, { opacity: 0, duration: 0.3, ease: "power1.out" });
+    const rect = panel.getBoundingClientRect();
+    if (origin && rect.width && rect.height) {
+      gsap.from(panel, {
+        x: origin.left - rect.left,
+        y: origin.top - rect.top,
+        scaleX: origin.width / rect.width,
+        scaleY: origin.height / rect.height,
+        transformOrigin: "top left",
+        duration: 0.5,
+        ease: "power3.inOut",
+        clearProps: "transform"
+      });
+    } else {
+      gsap.from(panel, { scale: 0.96, y: 12, duration: 0.35, ease: "power2.out", clearProps: "transform" });
+    }
+  }, [runId]);
   const [detail, setDetail] = useState<RunDetail | undefined>();
   const [report, setReport] = useState<RunReport | undefined>();
   const [loading, setLoading] = useState(true);
@@ -76,8 +108,8 @@ export function RunDetailPanel({ runId, initialTab = "overview", onClose, onPred
   const canReplay = Boolean(detail?.source && detail?.checkpoints.length);
 
   return (
-    <div className="detail-overlay" role="dialog" aria-label={`Run ${runId} detail`}>
-      <div className="detail-panel">
+    <div className="detail-overlay" role="dialog" aria-label={`Run ${runId} detail`} ref={overlayRef}>
+      <div className="detail-panel" ref={panelRef}>
         <header className="detail-header">
           <div>
             <h2>{runId}</h2>

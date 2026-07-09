@@ -4,6 +4,7 @@ import type {
   InspectionResponse,
   ModelGraph,
   PredictionResponse,
+  ResourcePreview,
   RunDetail,
   RunReport,
   RunSummary,
@@ -157,6 +158,17 @@ export async function trainResourceRun(
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Training the resource failed");
+  }
+  return response.json();
+}
+
+export async function previewResource(files: NamedSourceFile[], entryFile: string): Promise<ResourcePreview> {
+  const form = sourceForm(files);
+  form.append("entry_file", entryFile);
+  const response = await fetch("/api/inspect/resource/preview", { method: "POST", body: form });
+  if (!response.ok) {
+    const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
+    throw new Error(typeof detail === "string" ? detail : "Analyzing the resource failed");
   }
   return response.json();
 }

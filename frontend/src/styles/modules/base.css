@@ -44,12 +44,13 @@
   --glass-border: rgba(148, 163, 184, 0.16);
   --glass-blur: saturate(1.4) blur(18px);
   --scrim: rgba(5, 9, 16, 0.82);
-  --stage-dot: rgba(148, 163, 184, 0.16);
+  --stage-dot: rgba(148, 163, 184, 0.14);
+  --stage-star: rgba(125, 211, 252, 0.28);
 
   /* Stage geometry shared by layout.css and App.tsx (dock tween) */
   --topbar-h: 58px;
   --rail-w: 280px;
-  --dock-h: 320px;
+  --dock-h: 380px;
   --dock-handle-h: 42px;
 
   font-family: var(--font-sans);

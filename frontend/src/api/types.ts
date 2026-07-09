@@ -238,6 +238,21 @@ export type SourceImportResult = {
   } | null;
 };
 
+export type ResourcePreviewInfo = {
+  name: string;
+  input_shape?: number[] | null;
+  classes?: number | null;
+  data_source?: string | null;
+  sample_source?: string | null;
+};
+
+export type ResourcePreview = {
+  resource: ResourcePreviewInfo;
+  files: string[];
+  entry_file: string;
+  graph: ModelGraph;
+};
+
 export type RunReport = {
   run_id: string;
   generated_for_checkpoint?: number | null;

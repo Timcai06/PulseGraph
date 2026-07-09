@@ -15,12 +15,8 @@
     display: none;
   }
 
-  .history-row {
-    grid-template-columns: minmax(0, 1fr) 160px 70px 70px;
-  }
-
-  .history-row > :last-child {
-    grid-column: 1 / -1;
+  .stage-stats .stat-value {
+    font-size: 40px;
   }
 }
 
@@ -116,16 +112,16 @@
     min-height: 220px;
   }
 
-  .history-row {
-    grid-template-columns: 1fr;
-  }
-
-  .history-row > :last-child {
-    grid-column: auto;
-  }
-
-  .history-head {
+  /* no hover on touch: drop the cursor preview, keep the draggable strip */
+  .run-preview {
     display: none;
+  }
+
+  .stage-stats {
+    position: static;
+    justify-items: start;
+    text-align: left;
+    padding: 0 12px;
   }
 
   .neural-layers {
