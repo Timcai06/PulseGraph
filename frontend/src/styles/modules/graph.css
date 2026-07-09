@@ -384,7 +384,7 @@
 
 .view-tabs {
   display: inline-grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 2px;
 }
 
@@ -556,6 +556,22 @@
   border-color: rgba(52, 211, 153, 0.5);
 }
 
+.node-port {
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--accent-border);
+  background: var(--surface-raised);
+}
+
+.node-port.port-input {
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+}
+
+.node-port.port-output {
+  border-color: var(--cyan-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .model-node.topology-branch,
 .model-node.topology-branch-merge {
   border-style: double;
@@ -579,6 +595,29 @@
 
 .edge-merge .react-flow__edge-path {
   stroke: #a78bfa;
+}
+
+.ghost-edge .react-flow__edge-path {
+  stroke-width: 2.8;
+  stroke-dasharray: 8 5;
+}
+
+.ghost-compatible .react-flow__edge-path {
+  stroke: var(--green);
+}
+
+.ghost-caution,
+.ghost-unknown {
+  opacity: 0.88;
+}
+
+.ghost-caution .react-flow__edge-path,
+.ghost-unknown .react-flow__edge-path {
+  stroke: var(--amber);
+}
+
+.ghost-incompatible .react-flow__edge-path {
+  stroke: var(--red);
 }
 
 /* forward-pass signal: comet trail + orb riding the edge path.

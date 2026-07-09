@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState } from "react";
-import { Handle, Position, ReactFlow, Controls, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, ReactFlow, Controls, type Connection, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -10,6 +10,7 @@ import type { GraphNode, LayerSnapshot, ModelGraph } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { incomingEdges, orderEdgesForSweep } from "../lib/edgeSignal";
 import { displayGraph } from "../lib/graphView";
+import { assessGhostEdge, deriveGraphPorts, portId, type GhostEdge, type GraphPort } from "../lib/graphPorts";
 import { deriveGraphTopology, type NodeTopology } from "../lib/graphTopology";
 import { deriveLayerHealth, formatNodeShape, formatParamCount } from "../lib/layerHealth";
 import { motionDuration, motionDurations, motionEase } from "../lib/motion";
@@ -109,6 +110,9 @@ function layoutPositions(graph: ModelGraph): Record<string, { x: number; y: numb
 type PulseNodeData = GraphNode & {
   snapshot?: LayerSnapshot;
   topology?: NodeTopology;
+  inputPort?: GraphPort;
+  outputPort?: GraphPort;
+  composerMode: boolean;
 };
 
 const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
@@ -119,7 +123,14 @@ const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
       className={`model-node ${selected ? "selected" : ""} health-${health.severity} topology-${role}`}
       data-layer-id={data.id}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle
+        id={data.inputPort?.id ?? portId(data.id, "input")}
+        className="node-port port-input"
+        type="target"
+        position={Position.Left}
+        isConnectable={data.composerMode}
+        title={data.inputPort?.shape?.length ? `input [${data.inputPort.shape.join("x")}]` : "input shape unknown"}
+      />
       <div className="node-kind">
         <span>{data.kind}</span>
         {data.topology && (
@@ -134,7 +145,14 @@ const PulseNode = memo(({ data, selected }: NodeProps<Node<PulseNodeData>>) => {
         <span>{data.topology?.group ?? formatParamCount(data.param_count)} · {formatParamCount(data.param_count)}</span>
         <span className="node-health">{health.label}</span>
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle
+        id={data.outputPort?.id ?? portId(data.id, "output")}
+        className="node-port port-output"
+        type="source"
+        position={Position.Right}
+        isConnectable={data.composerMode}
+        title={data.outputPort?.shape?.length ? `output [${data.outputPort.shape.join("x")}]` : "output shape unknown"}
+      />
     </div>
   );
 });
@@ -154,17 +172,36 @@ type Props = {
   /* increments on every applied forward pass; triggers the full-path signal sweep */
   forwardTick: number;
   layerSnapshots: Record<string, LayerSnapshot>;
+  ghostEdges: GhostEdge[];
+  selectedGhostEdgeId?: string;
+  onGhostEdgesChange: (edges: GhostEdge[]) => void;
+  onGhostEdgeSelect: (edge?: GhostEdge) => void;
   onSelect: (node: GraphNode) => void;
 };
 
-export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabilities, forwardTick, layerSnapshots, onSelect }: Props) {
+export function ModelGraphPanel({
+  graph,
+  selectedNodeId,
+  pulsedNodeId,
+  probabilities,
+  forwardTick,
+  layerSnapshots,
+  ghostEdges,
+  selectedGhostEdgeId,
+  onGhostEdgesChange,
+  onGhostEdgeSelect,
+  onSelect
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewSurfaceRef = useRef<HTMLDivElement | null>(null);
   const sweepRef = useRef<gsap.core.Timeline | null>(null);
   const reducedMotion = useReducedMotion();
-  const [viewMode, setViewMode] = useState<"ops" | "neurons">("ops");
+  const [viewMode, setViewMode] = useState<"ops" | "neurons" | "composer">("ops");
   const visibleGraph = useMemo(() => displayGraph(graph), [graph]);
   const topology = useMemo(() => deriveGraphTopology(visibleGraph), [visibleGraph]);
+  const ports = useMemo(() => deriveGraphPorts(visibleGraph), [visibleGraph]);
+  const portsById = useMemo(() => Object.fromEntries(ports.map((port) => [port.id, port])), [ports]);
+  const composerMode = viewMode === "composer";
 
   const positions = useMemo(() => layoutPositions(visibleGraph), [visibleGraph]);
   const nodes = useMemo<Node<PulseNodeData>[]>(() => {
@@ -172,19 +209,38 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
       id: node.id,
       type: "pulse",
       position: positions[node.id] ?? { x: 0, y: 0 },
-      data: { ...node, snapshot: layerSnapshots[node.id], topology: topology.nodes[node.id] },
+      data: {
+        ...node,
+        snapshot: layerSnapshots[node.id],
+        topology: topology.nodes[node.id],
+        inputPort: portsById[portId(node.id, "input")],
+        outputPort: portsById[portId(node.id, "output")],
+        composerMode
+      },
       selected: node.id === selectedNodeId
     }));
-  }, [visibleGraph.nodes, positions, selectedNodeId, layerSnapshots, topology.nodes]);
+  }, [visibleGraph.nodes, positions, selectedNodeId, layerSnapshots, topology.nodes, portsById, composerMode]);
 
   const edges = useMemo<Edge[]>(() => {
-    return visibleGraph.edges.map((edge) => ({
+    const runtimeEdges = visibleGraph.edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
       className: `pulse-edge ${edgeClassNameByKind[topology.edges[edge.id]?.kind ?? "sequential"]}`
     }));
-  }, [visibleGraph.edges, topology.edges]);
+    if (!composerMode) return runtimeEdges;
+    const composeEdges = ghostEdges.map((edge) => ({
+      id: edge.id,
+      source: edge.sourcePort.nodeId,
+      target: edge.targetPort.nodeId,
+      sourceHandle: edge.sourcePortId,
+      targetHandle: edge.targetPortId,
+      animated: true,
+      selected: edge.id === selectedGhostEdgeId,
+      className: `ghost-edge ghost-${edge.status}`
+    }));
+    return [...runtimeEdges, ...composeEdges];
+  }, [visibleGraph.edges, topology.edges, composerMode, ghostEdges, selectedGhostEdgeId]);
 
   // per-snapshot pulse during training: node glow + comet on its incoming edges
   useGSAP(() => {
@@ -250,7 +306,7 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
     });
   }, { dependencies: [viewMode], scope: containerRef });
 
-  const handleViewMode = (nextMode: "ops" | "neurons") => {
+  const handleViewMode = (nextMode: "ops" | "neurons" | "composer") => {
     if (nextMode === viewMode) return;
     const surface = viewSurfaceRef.current;
     const state = surface && !reducedMotion ? Flip.getState(surface.children) : null;
@@ -275,10 +331,20 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
     if (node) onSelect(node);
   };
 
+  const handleConnect = (connection: Connection) => {
+    if (!composerMode || !connection.sourceHandle || !connection.targetHandle) return;
+    const sourcePort = portsById[connection.sourceHandle];
+    const targetPort = portsById[connection.targetHandle];
+    if (!sourcePort || !targetPort) return;
+    const ghostEdge = assessGhostEdge(visibleGraph, sourcePort, targetPort);
+    onGhostEdgesChange([...ghostEdges.filter((edge) => edge.id !== ghostEdge.id), ghostEdge]);
+    onGhostEdgeSelect(ghostEdge);
+  };
+
   return (
     <section className="graph-stage" ref={containerRef}>
       <div className="stage-toolbar">
-        <span className="stage-title">{viewMode === "ops" ? "Operator Graph" : "Neural Network"}</span>
+        <span className="stage-title">{viewMode === "ops" ? "Operator Graph" : viewMode === "composer" ? "Ops Composer" : "Neural Network"}</span>
         <div className="topology-summary" aria-label="graph topology summary">
           <span>{topology.maxDepth + 1} levels</span>
           {topology.hasBranching && <span>branching</span>}
@@ -287,10 +353,11 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
         <div className="view-tabs" aria-label="graph view">
           <button className={viewMode === "ops" ? "active" : ""} onClick={() => handleViewMode("ops")} type="button">Ops</button>
           <button className={viewMode === "neurons" ? "active" : ""} onClick={() => handleViewMode("neurons")} type="button">Neurons</button>
+          <button className={viewMode === "composer" ? "active" : ""} onClick={() => handleViewMode("composer")} type="button">Composer</button>
         </div>
       </div>
       <div className="graph-view-surface" ref={viewSurfaceRef}>
-        {viewMode === "ops" ? (
+        {viewMode === "ops" || viewMode === "composer" ? (
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -299,6 +366,11 @@ export function ModelGraphPanel({ graph, selectedNodeId, pulsedNodeId, probabili
             fitViewOptions={{ padding: 0.24 }}
             minZoom={0.35}
             nodesDraggable={false}
+            onConnect={handleConnect}
+            onEdgeClick={(_, edge) => {
+              const ghostEdge = ghostEdges.find((item) => item.id === edge.id);
+              if (ghostEdge) onGhostEdgeSelect(ghostEdge);
+            }}
             onNodeClick={(_, node) => onSelect(node.data)}
           >
             <Controls />

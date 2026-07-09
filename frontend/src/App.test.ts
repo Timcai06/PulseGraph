@@ -17,6 +17,7 @@ import layerInspectorSource from "./components/LayerInspector.tsx?raw";
 import timelineSource from "./lib/timeline.ts?raw";
 import timelineScrubberSource from "./components/TimelineScrubber.tsx?raw";
 import graphTopologySource from "./lib/graphTopology.ts?raw";
+import graphPortsSource from "./lib/graphPorts.ts?raw";
 import graphStylesSource from "./styles/modules/graph.css?raw";
 import panelStylesSource from "./styles/modules/panels.css?raw";
 
@@ -246,5 +247,15 @@ describe("App workspace layout", () => {
     expect(trainingLoopSource).toContain("latestLearningRate");
     expect(appSource).toContain("deriveTrainingLoopStages");
     expect(appSource).toContain("metrics: stream.metrics");
+  });
+
+  it("turns exposed node handles into intentional Composer ports", () => {
+    expect(graphPortsSource).toContain("deriveGraphPorts");
+    expect(graphPortsSource).toContain("assessGhostEdge");
+    expect(graphPortsSource).toContain("wouldCreateCycle");
+    expect(modelGraphSource).toContain("composer");
+    expect(modelGraphSource).toContain("ghost-edge");
+    expect(modelGraphSource).toContain("port-");
+    expect(modelGraphSource).toContain("onGhostEdgeSelect");
   });
 });

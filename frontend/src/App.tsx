@@ -29,6 +29,7 @@ import type { Theme } from "./lib/chartTheme";
 import type { ForwardTarget } from "./lib/forwardTarget";
 import { describeForwardTarget, resolveForwardTarget } from "./lib/forwardTarget";
 import { firstDisplayNode } from "./lib/graphView";
+import type { GhostEdge } from "./lib/graphPorts";
 import { displayClassName } from "./lib/inferenceView";
 import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
@@ -104,6 +105,8 @@ export default function App() {
   const [dockOpen, setDockOpen] = useState(false);
   const [forwardTick, setForwardTick] = useState(0);
   const [selectedTimelineStep, setSelectedTimelineStep] = useState<number | undefined>();
+  const [ghostEdges, setGhostEdges] = useState<GhostEdge[]>([]);
+  const [selectedGhostEdgeId, setSelectedGhostEdgeId] = useState<string | undefined>();
   const shellRef = useRef<HTMLElement | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
   const reducedMotion = useReducedMotion();
@@ -169,9 +172,11 @@ export default function App() {
   const loadDemoGraph = useCallback(() => {
     getDemoModel()
       .then((modelGraph) => {
-        setGraph(modelGraph);
-        setSelectedNode(firstDisplayNode(modelGraph));
-        setInspectedNodeId(undefined);
+      setGraph(modelGraph);
+      setSelectedNode(firstDisplayNode(modelGraph));
+      setInspectedNodeId(undefined);
+      setGhostEdges([]);
+      setSelectedGhostEdgeId(undefined);
       })
       .catch(() => setErrorMessage("Could not load the demo model graph. Is the backend running?"));
   }, []);
@@ -210,6 +215,8 @@ export default function App() {
     if (stream.graph) {
       setGraph(stream.graph);
       setSelectedNode(firstDisplayNode(stream.graph));
+      setGhostEdges([]);
+      setSelectedGhostEdgeId(undefined);
     }
   }, [stream.graph]);
 
@@ -219,6 +226,8 @@ export default function App() {
   const handleResourceUpload = async (files: NamedSourceFile[]) => {
     stream.reset();
     setSelectedTimelineStep(undefined);
+    setGhostEdges([]);
+    setSelectedGhostEdgeId(undefined);
     setBusy("resource");
     setErrorMessage(undefined);
     const entryFile = files[0]?.path;
@@ -284,6 +293,8 @@ export default function App() {
     }
     stream.reset();
     setSelectedTimelineStep(undefined);
+    setGhostEdges([]);
+    setSelectedGhostEdgeId(undefined);
     setBusy("train");
     setErrorMessage(undefined);
     try {
@@ -314,6 +325,8 @@ export default function App() {
     setGraph(result.graph);
     setSelectedNode(firstDisplayNode(result.graph));
     setInspectedNodeId(undefined);
+    setGhostEdges([]);
+    setSelectedGhostEdgeId(undefined);
     const lastNode = result.graph.nodes[result.graph.nodes.length - 1];
     stream.applyPrediction(result.layers, lastNode?.id);
   };
@@ -342,6 +355,8 @@ export default function App() {
     setCurrentRunKind("recorded-training");
     setPage("monitor");
     setSelectedTimelineStep(undefined);
+    setGhostEdges([]);
+    setSelectedGhostEdgeId(undefined);
     stream.startStream(runId);
   };
 
@@ -373,6 +388,8 @@ export default function App() {
     setCurrentRunKind(undefined);
     setInspectedNodeId(undefined);
     setSelectedTimelineStep(undefined);
+    setGhostEdges([]);
+    setSelectedGhostEdgeId(undefined);
     loadDemoGraph();
   };
 
@@ -420,6 +437,7 @@ export default function App() {
   const selectedLayerEvents = selectedNode ? replayEvents.filter((event) => event.layer === selectedNode.id) : [];
   const replayPulseNodeId = timelineLive ? stream.pulsedNodeId : causalFocus.layerId ?? stream.pulsedNodeId;
   const inspectedNode = inspectedNodeId === selectedNode?.id ? selectedNode : undefined;
+  const selectedGhostEdge = ghostEdges.find((edge) => edge.id === selectedGhostEdgeId);
 
   const handleTimelineStepChange = (step: number) => {
     const latestFrameStep = timelineFrames[timelineFrames.length - 1]?.step;
@@ -460,6 +478,13 @@ export default function App() {
             probabilities={prediction?.probabilities}
             forwardTick={forwardTick}
             layerSnapshots={replayLayerSnapshots}
+            ghostEdges={ghostEdges}
+            selectedGhostEdgeId={selectedGhostEdgeId}
+            onGhostEdgesChange={setGhostEdges}
+            onGhostEdgeSelect={(edge) => {
+              setSelectedGhostEdgeId(edge?.id);
+              if (edge) setDockOpen(true);
+            }}
             onSelect={handleSelectNode}
           />
           {inspectedNode && (
@@ -550,6 +575,31 @@ export default function App() {
                   <span>{timelineLive ? stream.events.length : replayEvents.length}</span>
                 </div>
                 <div className="event-list">
+                  {selectedGhostEdge && (
+                    <div className={`composer-ghost-card ghost-${selectedGhostEdge.status}`}>
+                      <div>
+                        <span>Composer ghost edge</span>
+                        <strong>
+                          {selectedGhostEdge.sourcePort.nodeId}
+                          {" -> "}
+                          {selectedGhostEdge.targetPort.nodeId}
+                        </strong>
+                      </div>
+                      <em>{selectedGhostEdge.status}</em>
+                      {selectedGhostEdge.reasons.map((reason) => (
+                        <p key={reason}>{reason}</p>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGhostEdges((edges) => edges.filter((edge) => edge.id !== selectedGhostEdge.id));
+                          setSelectedGhostEdgeId(undefined);
+                        }}
+                      >
+                        Remove ghost edge
+                      </button>
+                    </div>
+                  )}
                   {errorMessage && (
                     <div className="event warning">
                       <i className="event-dot" />
