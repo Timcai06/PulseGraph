@@ -75,14 +75,14 @@ export type PredictionResponse = {
   task?: string | null;
   output?: InferenceOutput | null;
   sample_index: number;
-  label: number;
-  prediction: number;
+  label?: number | null;
+  prediction?: number | null;
   weights: "trained" | "random";
   sample_source: "mnist" | "synthetic" | "probe";
   class_names?: string[] | null;
   image_shape: number[];
   image_pixels: number[];
-  probabilities: number[];
+  probabilities?: number[];
   graph: ModelGraph;
   layers: LayerSnapshot[];
 };

@@ -30,6 +30,8 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
   const predictionLabel = classification ? displayClassName(classification.prediction, classNames) : "";
   const outputKind = prediction ? inferenceOutputKind(prediction) : "classification";
   const structuredRows = prediction && !classification ? structuredOutputRows(prediction.output) : [];
+  const legacyLabel = typeof prediction?.label === "number" ? prediction.label : undefined;
+  const legacyPrediction = typeof prediction?.prediction === "number" ? prediction.prediction : undefined;
 
   return (
     <div className="inference-body">
@@ -79,8 +81,8 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
         {(classification || !prediction) && (
           <ProbabilityChart
             probabilities={probabilities.length ? probabilities : Array(10).fill(0)}
-            label={classification?.label ?? prediction?.label}
-            prediction={classification?.prediction ?? prediction?.prediction}
+            label={classification?.label ?? legacyLabel}
+            prediction={classification?.prediction ?? legacyPrediction}
             classNames={classNames}
             theme={theme}
           />

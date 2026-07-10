@@ -40,7 +40,7 @@ import type { ForwardTarget } from "./lib/forwardTarget";
 import { describeForwardTarget, resolveForwardTarget } from "./lib/forwardTarget";
 import { firstDisplayNode } from "./lib/graphView";
 import type { GhostEdge } from "./lib/graphPorts";
-import { displayClassName, inferenceOutputKind } from "./lib/inferenceView";
+import { classificationOutputFromPrediction, displayClassName, inferenceOutputKind } from "./lib/inferenceView";
 import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
 import {
@@ -416,9 +416,10 @@ export default function App() {
   };
 
   const predictionKind = prediction ? inferenceOutputKind(prediction) : "";
+  const classificationPrediction = prediction ? classificationOutputFromPrediction(prediction) : undefined;
   const predictionSummary = prediction
-    ? predictionKind === "classification"
-      ? `${displayClassName(prediction.prediction, prediction.class_names)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
+    ? classificationPrediction
+      ? `${displayClassName(classificationPrediction.prediction, classificationPrediction.classNames)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
       : `${predictionKind} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
     : "";
   const loopStages = useMemo(

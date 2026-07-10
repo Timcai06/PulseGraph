@@ -65,12 +65,14 @@ export function classificationOutputFromPrediction(prediction?: PredictionRespon
   const kind = output?.kind;
   if (typeof kind === "string" && kind !== "classification") return undefined;
 
-  const probabilities = numericArray(output?.probabilities) ?? prediction.probabilities;
+  const probabilities = numericArray(output?.probabilities) ?? prediction.probabilities ?? [];
   const classNames = stringArray(output?.class_names) ?? prediction.class_names;
   const outputPrediction = output?.prediction;
-  const resolvedPrediction = typeof outputPrediction === "number" ? outputPrediction : prediction.prediction;
+  const resolvedPrediction =
+    typeof outputPrediction === "number" ? outputPrediction : typeof prediction.prediction === "number" ? prediction.prediction : undefined;
   const outputLabel = output?.label;
-  const resolvedLabel = typeof outputLabel === "number" ? outputLabel : prediction.label;
+  const resolvedLabel = typeof outputLabel === "number" ? outputLabel : typeof prediction.label === "number" ? prediction.label : resolvedPrediction;
+  if (resolvedPrediction === undefined || resolvedLabel === undefined) return undefined;
   const outputConfidence = output?.confidence;
   const confidence =
     typeof outputConfidence === "number"

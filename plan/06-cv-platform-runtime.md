@@ -61,10 +61,10 @@ Classification should become one implementation of this pattern, not the platfor
 
 ### Task 1: Make Prediction Output Task-Neutral
 
-- [ ] Add a task-neutral inference response shape that can carry structured outputs without requiring `label`, `prediction`, and `probabilities`.
-- [ ] Keep backward-compatible classification fields while making non-classification outputs valid.
-- [ ] Add backend tests for classification compatibility and detection-shaped responses.
-- [ ] Add frontend tests that confirm classification still uses the rich probability view.
+- [x] Add a task-neutral inference response shape that can carry structured outputs without requiring `label`, `prediction`, and `probabilities`.
+- [x] Keep backward-compatible classification fields while making non-classification outputs valid.
+- [x] Add backend tests for classification compatibility and detection-shaped responses.
+- [x] Add frontend tests that confirm classification still uses the rich probability view.
 
 ### Task 2: Introduce Task Runtime Dispatch
 

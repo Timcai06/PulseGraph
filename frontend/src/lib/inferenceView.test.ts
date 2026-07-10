@@ -8,6 +8,7 @@ import {
   structuredOutputRows,
   topProbabilityRows
 } from "./inferenceView";
+import type { PredictionResponse } from "../api/types";
 
 describe("inference view helpers", () => {
   it("uses class names when available and falls back to numeric labels", () => {
@@ -74,18 +75,44 @@ describe("inference view helpers", () => {
     });
   });
 
+  it("keeps the rich classification view when legacy fields are absent", () => {
+    const prediction: PredictionResponse = {
+      task: "classification",
+      output: {
+        kind: "classification",
+        label: 1,
+        prediction: 2,
+        confidence: 0.7,
+        probabilities: [0.1, 0.2, 0.7],
+        class_names: ["red", "green", "blue"]
+      },
+      sample_index: 0,
+      weights: "trained",
+      sample_source: "probe",
+      image_shape: [3, 2, 2],
+      image_pixels: Array(12).fill(0),
+      graph: { nodes: [], edges: [] },
+      layers: []
+    };
+
+    expect(classificationOutputFromPrediction(prediction)).toEqual({
+      label: 1,
+      prediction: 2,
+      confidence: 0.7,
+      probabilities: [0.1, 0.2, 0.7],
+      classNames: ["red", "green", "blue"]
+    });
+  });
+
   it("summarizes non-classification outputs for the fallback renderer", () => {
-    const prediction = {
+    const prediction: PredictionResponse = {
       task: "detection",
       output: { kind: "detection", boxes: [[0, 0, 4, 4]], score: 0.93123, model: "tiny-detector" },
       sample_index: 0,
-      label: 0,
-      prediction: 0,
-      weights: "trained" as const,
-      sample_source: "probe" as const,
+      weights: "trained",
+      sample_source: "probe",
       image_shape: [3, 2, 2],
       image_pixels: Array(12).fill(0),
-      probabilities: [],
       graph: { nodes: [], edges: [] },
       layers: []
     };

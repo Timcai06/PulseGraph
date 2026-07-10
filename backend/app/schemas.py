@@ -76,14 +76,14 @@ class PredictionResponse(BaseModel):
     task: str = "classification"
     output: dict[str, Any] = Field(default_factory=dict)
     sample_index: int
-    label: int
-    prediction: int
+    label: int | None = None
+    prediction: int | None = None
     weights: Literal["trained", "random"] = "random"
     sample_source: Literal["mnist", "synthetic", "probe"] = "synthetic"
     class_names: list[str] | None = None
     image_shape: list[int] = Field(default_factory=list)
     image_pixels: list[float]
-    probabilities: list[float]
+    probabilities: list[float] = Field(default_factory=list)
     graph: ModelGraph
     layers: list[LayerSnapshot]
 
