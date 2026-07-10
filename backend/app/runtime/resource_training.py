@@ -148,8 +148,32 @@ def run_resource_training_job(
         )
         sample = io.BytesIO()
         target_key = "labels" if resource.task == "classification" else "targets"
+        recorded_predictions: list[dict] = []
+        model.eval()
+        try:
+            with torch.no_grad():
+                for index in range(int(probe_images.shape[0])):
+                    if isinstance(probe_targets, torch.Tensor):
+                        target = int(probe_targets[index].item())
+                    else:
+                        target = probe_targets[index]
+                    result = runtime.inference(
+                        model,
+                        probe_images[index : index + 1],
+                        target,
+                        resource.class_names,
+                    )
+                    recorded_predictions.append(result.output)
+        except Exception:
+            recorded_predictions = []
         torch.save(
-            {"images": probe_images, target_key: probe_targets, "sample_source": sample_source, "task": resource.task},
+            {
+                "images": probe_images,
+                target_key: probe_targets,
+                "predictions": recorded_predictions,
+                "sample_source": sample_source,
+                "task": resource.task,
+            },
             sample,
         )
         run_store.save_samples(run_id, sample.getvalue())

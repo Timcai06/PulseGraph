@@ -65,7 +65,21 @@ def _register_full_run(run_id: str) -> bytes:
     model = _build_tiny_model()
 
     samples = io.BytesIO()
-    torch.save({"images": torch.rand(6, 1, 28, 28), "labels": torch.tensor([0, 1, 2, 3, 4, 5])}, samples)
+    images = torch.rand(6, 1, 28, 28)
+    labels = torch.tensor([0, 1, 2, 3, 4, 5])
+    model.eval()
+    with torch.no_grad():
+        predictions = model(images).argmax(dim=1).tolist()
+    torch.save(
+        {
+            "images": images,
+            "labels": labels,
+            "predictions": [
+                {"kind": "classification", "prediction": int(prediction)} for prediction in predictions
+            ],
+        },
+        samples,
+    )
     response = client.post(f"/api/runs/{run_id}/samples", content=samples.getvalue())
     assert response.status_code == 200
 

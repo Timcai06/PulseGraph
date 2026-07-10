@@ -1,4 +1,5 @@
 import io
+import uuid
 
 import pytest
 import torch
@@ -71,6 +72,9 @@ def _register_detection_run(run_id: str) -> RunStore:
     images[0, :, 1:7, 1:7] = 1.0
     images[1, :, 1:7, 1:7] = 0.7
     sample = io.BytesIO()
+    model.eval()
+    with torch.no_grad():
+        predictions = model(images)
     torch.save(
         {
             "images": images,
@@ -78,6 +82,7 @@ def _register_detection_run(run_id: str) -> RunStore:
                 {"boxes": torch.tensor([[1.0, 1.0, 6.0, 6.0]]), "labels": torch.tensor([1])},
                 {"boxes": torch.tensor([[1.0, 1.0, 7.0, 7.0]]), "labels": torch.tensor([1])},
             ],
+            "predictions": predictions,
             "sample_source": "probe",
         },
         sample,
@@ -195,3 +200,33 @@ def test_detection_report_surfaces_mean_iou_and_exportable_evidence() -> None:
     assert "## Error Analysis" not in markdown
     assert "Detection Evidence" in html
     assert "Task Metrics" in html
+
+
+def test_report_uses_recorded_predictions_without_executing_source() -> None:
+    run_id = f"recorded-report-{uuid.uuid4().hex[:8]}"
+    store = RunStore()
+    store.save_source(run_id, "raise RuntimeError('report executed source')", entry_class="NeverLoad")
+    store.save_config(run_id, {"task": "classification", "class_names": ["zero", "one"]})
+    samples = io.BytesIO()
+    torch.save(
+        {
+            "images": torch.zeros(2, 1, 2, 2),
+            "labels": torch.tensor([0, 1]),
+            "predictions": [
+                {"kind": "classification", "prediction": 0},
+                {"kind": "classification", "prediction": 1},
+            ],
+        },
+        samples,
+    )
+    store.save_samples(run_id, samples.getvalue())
+    checkpoint = io.BytesIO()
+    torch.save({}, checkpoint)
+    store.save_checkpoint_bytes(run_id, 1, checkpoint.getvalue())
+
+    detail = build_run_detail(store, run_id)
+    assert detail is not None
+    report = build_run_report(store, detail)
+
+    assert report.checkpoint_evaluations[0].accuracy == 1.0
+    assert report.error_analysis is not None

@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 
 from app.api.routes_runs import create_runs_router
-from app.events.run_registry import run_registry
+from app.events.run_registry import RunRegistryFullError, run_registry
 from app.events.run_store import RunStore
 from app.events.training_control import training_task_controller
 from app.events.training_events import aggregate_layer_snapshot, build_run_event as _run_event, publish_run_status, save_run_config
@@ -36,9 +36,11 @@ from app.reports.markdown import render_run_report_html, render_run_report_markd
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
 from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
 from app.schemas import ImageSample, ModelGraph, RunDetail, RunEvent
+from app.security.local_boundary import enforce_local_boundary, require_trusted_execution
 
 
 app = FastAPI(title="PulseGraph API", version="0.1.0")
+app.middleware("http")(enforce_local_boundary)
 run_store = RunStore()
 
 
@@ -63,7 +65,7 @@ MAX_LIVE_LAYER_SAMPLES = 8
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,7 +119,10 @@ def ingest_run_events(run_id: str, events: RunEvent | list[RunEvent]):
             graph = build_graph_from_tensor_specs(event.payload["tensors"])
             event.payload = {"graph": graph.model_dump()}
         _persist_registration(run_id, event)
-    run = run_registry.publish(run_id, batch)
+    try:
+        run = run_registry.publish(run_id, batch)
+    except RunRegistryFullError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"accepted": len(batch), "run_id": run_id, "completed": run.completed}
 
 
@@ -590,7 +595,19 @@ def _run_source_training_job(
 
     sample = io.BytesIO()
     probe_images, probe_labels = _probe_batch_like(example_input, min(16, batch_size), classes)
-    torch.save({"images": probe_images.detach().cpu(), "labels": probe_labels.detach().cpu()}, sample)
+    model.eval()
+    with torch.no_grad():
+        probe_predictions = model(probe_images).argmax(dim=1).detach().cpu().tolist()
+    torch.save(
+        {
+            "images": probe_images.detach().cpu(),
+            "labels": probe_labels.detach().cpu(),
+            "predictions": [
+                {"kind": "classification", "prediction": int(prediction)} for prediction in probe_predictions
+            ],
+        },
+        sample,
+    )
     run_store.save_samples(run_id, sample.getvalue())
 
     checkpoint = io.BytesIO()
@@ -652,12 +669,14 @@ def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIM
 
 @app.post("/api/runs/train-resource")
 async def train_run_from_resource(
+    request: Request,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
     steps: int = Form(100),
     telemetry_stride: int = Form(1),
 ):
+    require_trusted_execution(request)
     collected = await _collect_source_files(files)
     python_files = _python_files(collected)
     if not python_files:
@@ -794,9 +813,9 @@ def _resolve_entry_file(requested: str, collected: list[UploadedSourceFile]) -> 
 
 
 @app.post("/api/inspect/resource/preview")
-async def preview_training_resource(files: list[UploadFile] = File(...), entry_file: str = Form(...)):
-    """Load and fx-trace an uploaded training resource without creating a run,
-    so the UI can show the operator graph immediately on import."""
+async def preview_training_resource(request: Request, files: list[UploadFile] = File(...), entry_file: str = Form(...)):
+    """Execute and trace a trusted local resource without creating a run."""
+    require_trusted_execution(request)
     collected = await _collect_source_files(files)
     python_files = _python_files(collected)
     if not python_files:
@@ -832,6 +851,7 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
 
 @app.post("/api/runs/from-source")
 async def import_run_from_source(
+    request: Request,
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
     entry_class: str = Form(...),
@@ -842,6 +862,7 @@ async def import_run_from_source(
     to instantiate the nn.Module, then PulseGraph saves its initial state_dict as
     a checkpoint so the existing replay, stream, and report surfaces all work.
     """
+    require_trusted_execution(request)
     collected = await _collect_source_files(files)
     python_files = _python_files(collected)
     if not python_files:
@@ -928,12 +949,14 @@ async def import_run_from_source(
 
 @app.post("/api/runs/train-source")
 async def train_run_from_source(
+    request: Request,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
     entry_class: str = Form(...),
     steps: int = Form(8),
 ):
+    require_trusted_execution(request)
     collected = await _collect_source_files(files)
     python_files = _python_files(collected)
     if not python_files:
@@ -1024,11 +1047,13 @@ async def import_artifact(request: Request):
 
 @app.post("/api/runs/{run_id}/source")
 async def attach_run_source(
+    request: Request,
     run_id: str,
     files: list[UploadFile] = File(...),
     entry_file: str = Form(...),
     entry_class: str = Form(...),
 ):
+    require_trusted_execution(request)
     collected = await _collect_source_files(files)
     python_files = _python_files(collected)
     if not python_files:
@@ -1115,7 +1140,8 @@ def cancel_run(run_id: str):
 
 
 @app.get("/api/runs/{run_id}/forward")
-def replay_run_forward(run_id: str, checkpoint_step: int = 0, index: int = 0):
+def replay_run_forward(request: Request, run_id: str, checkpoint_step: int = 0, index: int = 0):
+    require_trusted_execution(request)
     try:
         return run_replay_forward(run_store, run_id, checkpoint_step, index)
     except ReplayError as error:
@@ -1156,6 +1182,13 @@ def export_run_report_html(run_id: str):
 
 @app.get("/api/runs/{run_id}/stream")
 async def stream_run(run_id: str):
+    try:
+        run = run_registry.ensure(run_id)
+    except RunRegistryFullError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
     async def generate():
         async for event in run_registry.subscribe(run_id):
             if event is None:

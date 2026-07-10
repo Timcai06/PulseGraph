@@ -52,6 +52,11 @@ describe("App workspace layout", () => {
     expect(appSource).not.toContain("applyPredictionResult(await runForward(result.run_id, result.checkpoint.step));");
   });
 
+  it("marks every Python execution request as trusted local code", () => {
+    expect(apiHttpSource).toContain('"X-PulseGraph-Trust": "trusted-local-code"');
+    expect(apiHttpSource.match(/headers: trustedExecutionHeaders/g)?.length).toBeGreaterThanOrEqual(6);
+  });
+
   it("uses a single training resource workflow instead of source and pt side paths", () => {
     const combined = [appSource, controlRailSource].join("\n");
 

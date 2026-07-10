@@ -88,6 +88,8 @@ That separation keeps this repository focused on the platform layer while the mo
 
 A training resource is a trusted Python file that exposes the pieces PulseGraph needs to run and visualize training:
 
+Uploaded Python executes with the permissions of the local backend process. Review [SECURITY.md](SECURITY.md) before loading third-party resources or changing the loopback-only deployment model.
+
 ```python
 def metadata():
     return {

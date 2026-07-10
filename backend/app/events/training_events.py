@@ -45,10 +45,7 @@ def build_run_event(
 
 
 def save_run_config(run_store: RunStore, run_id: str, **updates: Any) -> dict[str, Any]:
-    config = run_store.load_config(run_id) or {}
-    config.update(updates)
-    run_store.save_config(run_id, config)
-    return config
+    return run_store.update_config(run_id, updates)
 
 
 def publish_run_status(

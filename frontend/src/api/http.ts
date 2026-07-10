@@ -14,6 +14,8 @@ import type {
 
 export type NamedSourceFile = { file: File; path: string };
 
+const trustedExecutionHeaders = { "X-PulseGraph-Trust": "trusted-local-code" };
+
 function sourceForm(files: NamedSourceFile[]): FormData {
   const form = new FormData();
   for (const { file, path } of files) form.append("files", file, path);
@@ -90,7 +92,8 @@ export async function downloadRunReportMarkdown(runId: string): Promise<Blob> {
 
 export async function runForward(runId: string, checkpointStep = 0, index = 0): Promise<PredictionResponse> {
   const response = await fetch(
-    `/api/runs/${encodeURIComponent(runId)}/forward?checkpoint_step=${checkpointStep}&index=${index}`
+    `/api/runs/${encodeURIComponent(runId)}/forward?checkpoint_step=${checkpointStep}&index=${index}`,
+    { headers: trustedExecutionHeaders }
   );
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
@@ -116,7 +119,11 @@ export async function attachRunSource(
   const form = sourceForm(files);
   form.append("entry_file", entryFile);
   form.append("entry_class", entryClass);
-  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/source`, { method: "POST", body: form });
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/source`, {
+    method: "POST",
+    headers: trustedExecutionHeaders,
+    body: form
+  });
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Attaching source failed");
@@ -141,7 +148,7 @@ export async function importSourceRun(
   const form = sourceForm(files);
   form.append("entry_file", entryFile);
   form.append("entry_class", entryClass);
-  const response = await fetch("/api/runs/from-source", { method: "POST", body: form });
+  const response = await fetch("/api/runs/from-source", { method: "POST", headers: trustedExecutionHeaders, body: form });
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Creating a run from source failed");
@@ -159,7 +166,7 @@ export async function trainSourceRun(
   form.append("entry_file", entryFile);
   form.append("entry_class", entryClass);
   form.append("steps", String(steps));
-  const response = await fetch("/api/runs/train-source", { method: "POST", body: form });
+  const response = await fetch("/api/runs/train-source", { method: "POST", headers: trustedExecutionHeaders, body: form });
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Training the source failed");
@@ -177,7 +184,7 @@ export async function trainResourceRun(
   form.append("entry_file", entryFile);
   form.append("steps", String(steps));
   form.append("telemetry_stride", String(telemetryStride));
-  const response = await fetch("/api/runs/train-resource", { method: "POST", body: form });
+  const response = await fetch("/api/runs/train-resource", { method: "POST", headers: trustedExecutionHeaders, body: form });
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Training the resource failed");
@@ -188,7 +195,7 @@ export async function trainResourceRun(
 export async function previewResource(files: NamedSourceFile[], entryFile: string): Promise<ResourcePreview> {
   const form = sourceForm(files);
   form.append("entry_file", entryFile);
-  const response = await fetch("/api/inspect/resource/preview", { method: "POST", body: form });
+  const response = await fetch("/api/inspect/resource/preview", { method: "POST", headers: trustedExecutionHeaders, body: form });
   if (!response.ok) {
     const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
     throw new Error(typeof detail === "string" ? detail : "Analyzing the resource failed");

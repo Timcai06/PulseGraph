@@ -4,8 +4,17 @@ import json
 import os
 import re
 import shutil
+import tempfile
+from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from threading import RLock
+from typing import Any, IO, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback keeps process-local locking.
+    fcntl = None
 
 from pydantic import ValidationError
 
@@ -13,6 +22,8 @@ from app.schemas import CheckpointInfo, RunEvent
 
 SAFE_RUN_ID = re.compile(r"[^A-Za-z0-9._-]")
 CHECKPOINT_NAME = re.compile(r"step_(\d+)(?:_epoch_(\d+))?\.pt$")
+_RUN_LOCKS: dict[str, RLock] = {}
+_RUN_LOCKS_GUARD = RLock()
 
 
 def runs_dir() -> Path:
@@ -24,6 +35,49 @@ def runs_dir() -> Path:
 
 def safe_run_id(run_id: str) -> str:
     return SAFE_RUN_ID.sub("_", run_id) or "run"
+
+
+def _run_lock(run_id: str) -> RLock:
+    key = safe_run_id(run_id)
+    with _RUN_LOCKS_GUARD:
+        return _RUN_LOCKS.setdefault(key, RLock())
+
+
+def _atomic_write(path: Path, data: str | bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary_path = Path(temporary_name)
+    try:
+        if isinstance(data, bytes):
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(data)
+        else:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(data)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+@contextmanager
+def _file_lock(handle: IO[Any], *, exclusive: bool) -> Iterator[None]:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+    try:
+        yield
+    finally:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _read_lines(path: Path, max_lines: int | None = None) -> list[str]:
+    if max_lines is not None and max_lines <= 0:
+        return []
+    with path.open("r", encoding="utf-8") as handle:
+        with _file_lock(handle, exclusive=False):
+            if max_lines is None:
+                return list(handle)
+            return list(deque(handle, maxlen=max_lines))
 
 
 class RunStore:
@@ -38,16 +92,17 @@ class RunStore:
         return runs_dir() / safe_run_id(run_id)
 
     def delete_run(self, run_id: str) -> bool:
-        deleted = False
-        directory = self.existing_run_dir(run_id)
-        if directory.exists():
-            shutil.rmtree(directory)
-            deleted = True
-        legacy = runs_dir() / f"{safe_run_id(run_id)}.jsonl"
-        if legacy.exists():
-            legacy.unlink()
-            deleted = True
-        return deleted
+        with _run_lock(run_id):
+            deleted = False
+            directory = self.existing_run_dir(run_id)
+            if directory.exists():
+                shutil.rmtree(directory)
+                deleted = True
+            legacy = runs_dir() / f"{safe_run_id(run_id)}.jsonl"
+            if legacy.exists():
+                legacy.unlink()
+                deleted = True
+            return deleted
 
     def _events_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "events.jsonl"
@@ -55,9 +110,14 @@ class RunStore:
     # ---- events ----
 
     def append(self, run_id: str, events: list[RunEvent]) -> None:
-        with self._events_path(run_id).open("a", encoding="utf-8") as handle:
-            for event in events:
-                handle.write(json.dumps(event.model_dump(), ensure_ascii=False) + "\n")
+        if not events:
+            return
+        payload = "".join(json.dumps(event.model_dump(), ensure_ascii=False) + "\n" for event in events)
+        with _run_lock(run_id):
+            with self._events_path(run_id).open("a", encoding="utf-8") as handle:
+                with _file_lock(handle, exclusive=True):
+                    handle.write(payload)
+                    handle.flush()
 
     def _parse_events(self, lines: list[str]) -> list[RunEvent]:
         events: list[RunEvent] = []
@@ -69,16 +129,14 @@ class RunStore:
         return events
 
     def load_events(self, run_id: str, max_events: int | None = None) -> list[RunEvent]:
-        path = self._events_path(run_id)
-        if not path.exists():
-            # legacy flat layout: runs/{id}.jsonl
-            path = runs_dir() / f"{safe_run_id(run_id)}.jsonl"
-        if not path.exists():
-            return []
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if max_events is not None:
-            lines = lines[-max_events:]
-        return self._parse_events(lines)
+        with _run_lock(run_id):
+            path = self.existing_run_dir(run_id) / "events.jsonl"
+            if not path.exists():
+                # legacy flat layout: runs/{id}.jsonl
+                path = runs_dir() / f"{safe_run_id(run_id)}.jsonl"
+            if not path.exists():
+                return []
+            return self._parse_events(_read_lines(path, max_events))
 
     def load_all(self, max_events_per_run: int) -> dict[str, list[RunEvent]]:
         """Load every persisted run, keeping only the newest events per run.
@@ -89,10 +147,12 @@ class RunStore:
         runs: dict[str, list[RunEvent]] = {}
         for path in sorted(runs_dir().glob("*.jsonl")) + sorted(runs_dir().glob("*/events.jsonl")):
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                run_id = path.stem if path.parent == runs_dir() else path.parent.name
+                with _run_lock(run_id):
+                    lines = _read_lines(path, max_events_per_run)
             except OSError:
                 continue
-            events = self._parse_events(lines[-max_events_per_run:])
+            events = self._parse_events(lines)
             if events:
                 runs[events[0].run_id] = events
         return runs
@@ -108,9 +168,11 @@ class RunStore:
         return directory
 
     def _write_entry_meta(self, run_id: str, entry_class: str, entry_file: str, origin: str) -> None:
-        (self.source_dir(run_id) / "entry.json").write_text(
-            json.dumps({"entry_class": entry_class, "entry_file": entry_file, "origin": origin}), encoding="utf-8"
-        )
+        with _run_lock(run_id):
+            _atomic_write(
+                self.source_dir(run_id) / "entry.json",
+                json.dumps({"entry_class": entry_class, "entry_file": entry_file, "origin": origin}),
+            )
 
     def save_source(self, run_id: str, source_code: str, entry_class: str | None = None) -> None:
         """Single-file source recorded at training time (register_source event)."""
@@ -184,9 +246,15 @@ class RunStore:
         return meta["entry_class"] if meta else None
 
     def save_config(self, run_id: str, config: dict[str, Any]) -> None:
-        (self.run_dir(run_id) / "config.json").write_text(
-            json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        with _run_lock(run_id):
+            _atomic_write(self.run_dir(run_id) / "config.json", json.dumps(config, ensure_ascii=False, indent=2))
+
+    def update_config(self, run_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        with _run_lock(run_id):
+            config = self.load_config(run_id) or {}
+            config.update(updates)
+            self.save_config(run_id, config)
+            return config
 
     def load_config(self, run_id: str) -> dict[str, Any] | None:
         path = self.run_dir(run_id) / "config.json"
@@ -198,7 +266,8 @@ class RunStore:
             return None
 
     def save_graph(self, run_id: str, graph_json: dict[str, Any]) -> None:
-        (self.run_dir(run_id) / "graph.json").write_text(json.dumps(graph_json, ensure_ascii=False), encoding="utf-8")
+        with _run_lock(run_id):
+            _atomic_write(self.run_dir(run_id) / "graph.json", json.dumps(graph_json, ensure_ascii=False))
 
     def load_graph(self, run_id: str) -> dict[str, Any] | None:
         path = self.run_dir(run_id) / "graph.json"
@@ -218,7 +287,8 @@ class RunStore:
 
     def save_layer_snapshot(self, run_id: str, step: int, layers: list[dict[str, Any]]) -> str:
         path = self.layer_snapshots_dir(run_id) / f"step_{step:04d}.json"
-        path.write_text(json.dumps({"layers": layers}, ensure_ascii=False), encoding="utf-8")
+        with _run_lock(run_id):
+            _atomic_write(path, json.dumps({"layers": layers}, ensure_ascii=False))
         return str(path.relative_to(runs_dir()))
 
     def load_layer_snapshot(self, run_id: str, step: int) -> list[dict[str, Any]]:
@@ -236,7 +306,8 @@ class RunStore:
 
     def save_samples(self, run_id: str, data: bytes) -> Path:
         path = self.run_dir(run_id) / "samples.pt"
-        path.write_bytes(data)
+        with _run_lock(run_id):
+            _atomic_write(path, data)
         return path
 
     def samples_path(self, run_id: str) -> Path | None:
@@ -253,7 +324,8 @@ class RunStore:
     def save_checkpoint_bytes(self, run_id: str, step: int, data: bytes, epoch: int | None = None) -> Path:
         suffix = f"step_{step:04d}" + (f"_epoch_{epoch}" if epoch is not None else "")
         path = self.checkpoints_dir(run_id) / f"{suffix}.pt"
-        path.write_bytes(data)
+        with _run_lock(run_id):
+            _atomic_write(path, data)
         return path
 
     def list_checkpoints(self, run_id: str) -> list[CheckpointInfo]:
@@ -303,9 +375,10 @@ class RunStore:
             return {}
 
     def record_fingerprint(self, run_id: str, checkpoint_name: str, fingerprint: str) -> None:
-        fingerprints = self._load_fingerprints(run_id)
-        fingerprints[checkpoint_name] = fingerprint
-        self._fingerprints_path(run_id).write_text(json.dumps(fingerprints, indent=2), encoding="utf-8")
+        with _run_lock(run_id):
+            fingerprints = self._load_fingerprints(run_id)
+            fingerprints[checkpoint_name] = fingerprint
+            _atomic_write(self._fingerprints_path(run_id), json.dumps(fingerprints, indent=2))
 
     def find_run_by_fingerprint(self, fingerprint: str) -> tuple[str, int] | None:
         """Return (run_id, checkpoint_step) whose recorded fingerprint matches."""

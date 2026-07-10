@@ -5,16 +5,13 @@ from typing import Any
 import torch
 from torch.nn import functional as F
 
-from app.events.run_store import RunStore, runs_dir
-from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource
+from app.events.run_store import RunStore
+from app.resources.contract import ResourceContractError, image_shape_from_sample
 from app.runtime.detection import (
     DetectionContractError,
-    forward_detection,
     match_detection_batch,
 )
-from app.runtime.model_loader import load_model_and_weights
 from app.runtime.replay import load_probe_samples
-from app.runtime.task_runtime import TaskRuntimeError, resolve_task_runtime
 from app.schemas import (
     CheckpointEvaluation,
     DetectionAnalysis,
@@ -28,7 +25,6 @@ from app.schemas import (
     TaskMetricSummary,
 )
 
-MAX_EVALUATED_CHECKPOINTS = 6
 MAX_MISCLASSIFIED_SAMPLES = 8
 MAX_DETECTION_EVIDENCE = 4
 MAX_REPORT_IMAGE_SIDE = 160
@@ -163,66 +159,33 @@ def _layer_health(store: RunStore, run_id: str) -> list[LayerHealth]:
 
 
 def _evaluate_classification_checkpoints(store: RunStore, detail: RunDetail) -> tuple[list[CheckpointEvaluation], ErrorAnalysis | None]:
-    source_path = store.source_path(detail.run_id)
-    entry_class = store.load_entry_class(detail.run_id)
     probe = load_probe_samples(store, detail.run_id)
-    if source_path is None or entry_class is None or probe is None or not detail.checkpoints:
+    predictions = _load_recorded_predictions(store, detail.run_id)
+    if probe is None or predictions is None or not detail.checkpoints:
         return [], None
 
     images, labels, _sample_source = probe
-    evaluations: list[CheckpointEvaluation] = []
-    error_analysis: ErrorAnalysis | None = None
-    checkpoints = detail.checkpoints[-MAX_EVALUATED_CHECKPOINTS:]
-
-    source_root = store.run_dir(detail.run_id) / "source"
+    if not isinstance(labels, torch.Tensor) or len(predictions) < int(labels.numel()):
+        return [], None
+    try:
+        predicted_labels = torch.tensor(
+            [int(item["prediction"]) for item in predictions[: int(labels.numel())]],
+            dtype=torch.long,
+        )
+    except (KeyError, TypeError, ValueError):
+        return [], None
     config = detail.config or {}
     class_names = config.get("class_names") if isinstance(config.get("class_names"), list) else None
-    for checkpoint in checkpoints:
-        model = _load_checkpoint_model(store, detail, entry_class, source_path, source_root, checkpoint.path)
-        if model is None:
-            continue
-        try:
-            with torch.no_grad():
-                logits = model(images)
-            predictions = logits.argmax(dim=1)
-        except Exception:
-            continue
-        correct = int((predictions == labels).sum().item())
-        evaluations.append(
-            CheckpointEvaluation(
-                step=checkpoint.step,
-                accuracy=round(correct / labels.numel(), 4),
-                sample_count=int(labels.numel()),
-            )
+    correct = int((predicted_labels == labels).sum().item())
+    checkpoint = detail.checkpoints[-1]
+    evaluations = [
+        CheckpointEvaluation(
+            step=checkpoint.step,
+            accuracy=round(correct / labels.numel(), 4),
+            sample_count=int(labels.numel()),
         )
-        if checkpoint is checkpoints[-1]:
-            error_analysis = _build_error_analysis(images, labels, predictions, class_names=class_names)
-
-    return evaluations, error_analysis
-
-
-def _load_checkpoint_model(
-    store: RunStore,
-    detail: RunDetail,
-    entry_class: str,
-    source_path,
-    source_root,
-    checkpoint_path: str,
-):
-    checkpoint = runs_dir() / checkpoint_path
-    if (detail.config or {}).get("run_kind") == "resource-training":
-        try:
-            resource = load_training_resource(source_path, source_root=source_root)
-            model = resource.build_model()
-            state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
-            if not isinstance(state_dict, dict):
-                return None
-            model.load_state_dict(state_dict)
-            model.eval()
-            return model
-        except (ResourceContractError, RuntimeError, OSError, ValueError):
-            return None
-    return load_model_and_weights(source_path, entry_class, checkpoint, source_root=source_root)
+    ]
+    return evaluations, _build_error_analysis(images, labels, predicted_labels, class_names=class_names)
 
 
 def _build_error_analysis(
@@ -318,7 +281,7 @@ def build_detection_analysis(
     return DetectionAnalysis(mean_iou=mean_iou, evaluated_samples=sample_count, evidence=evidence[:MAX_DETECTION_EVIDENCE])
 
 
-def _load_structured_detection_samples(store: RunStore, run_id: str) -> tuple[torch.Tensor, list[Any], str] | None:
+def _load_recorded_predictions(store: RunStore, run_id: str) -> list[dict[str, Any]] | None:
     path = store.samples_path(run_id)
     if path is None:
         return None
@@ -326,47 +289,22 @@ def _load_structured_detection_samples(store: RunStore, run_id: str) -> tuple[to
         bundle = torch.load(path, map_location="cpu", weights_only=True)
     except Exception:
         return None
-    images = bundle.get("images")
-    targets = bundle.get("targets")
-    sample_source = str(bundle.get("sample_source") or "probe")
-    if not isinstance(images, torch.Tensor) or not images.shape[0] or not isinstance(targets, list):
+    predictions = bundle.get("predictions")
+    if not isinstance(predictions, list) or not all(isinstance(item, dict) for item in predictions):
         return None
-    if len(targets) < int(images.shape[0]):
-        return None
-    return images.float(), targets, sample_source
-
-
-def _forward_detection_predictions(model, images: torch.Tensor) -> Any | None:
-    try:
-        outputs, _ = forward_detection(model, images)
-        return outputs
-    except DetectionContractError:
-        return None
+    return predictions
 
 
 def _evaluate_detection_checkpoint(store: RunStore, detail: RunDetail) -> DetectionAnalysis | None:
-    source_path = store.source_path(detail.run_id)
-    entry_class = store.load_entry_class(detail.run_id)
     task = _task_name(detail)
-    if source_path is None or entry_class is None or task != "detection" or not detail.checkpoints:
+    if task != "detection" or not detail.checkpoints:
         return None
-    try:
-        resolve_task_runtime(task)
-    except TaskRuntimeError:
-        return None
-
-    probe = _load_structured_detection_samples(store, detail.run_id)
+    probe = load_probe_samples(store, detail.run_id)
     if probe is None:
         return None
     images, targets, _sample_source = probe
-
-    checkpoint = detail.checkpoints[-1]
-    source_root = store.run_dir(detail.run_id) / "source"
-    model = _load_checkpoint_model(store, detail, entry_class, source_path, source_root, checkpoint.path)
-    if model is None:
-        return None
-    predictions = _forward_detection_predictions(model, images)
-    if predictions is None:
+    predictions = _load_recorded_predictions(store, detail.run_id)
+    if not isinstance(targets, list) or predictions is None or len(predictions) < int(images.shape[0]):
         return None
 
     class_names = (detail.config or {}).get("class_names") if isinstance((detail.config or {}).get("class_names"), list) else None
