@@ -25,6 +25,7 @@ from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
 from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource, model_input_from_sample
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
+from app.runtime.task_runtime import TaskRuntimeError, resolve_task_runtime
 from app.reports.analyzer import build_run_report
 from app.reports.markdown import render_run_report_html, render_run_report_markdown
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
@@ -478,14 +479,17 @@ def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIM
     samples: list[ImageSample] = []
     class_names = resource.class_names
     for index in range(limit):
-        image, label = resource.inference_sample(index)
+        image, target = resource.inference_sample(index)
         image_shape = image_shape_from_sample(image, resource.input_shape)
         display_image = image[0] if image.dim() == 4 and image.shape[0] == 1 else image
+        label = int(target) if resource.task == "classification" else None
         samples.append(
             ImageSample(
                 index=index,
+                task=resource.task,
+                output=resource.sample_output(target),
                 label=label,
-                label_name=_class_name(class_names, label),
+                label_name=_class_name(class_names, label) if label is not None else None,
                 sample_source=resource.sample_source if resource.sample_source in {"mnist", "synthetic", "probe"} else "probe",
                 image_shape=image_shape,
                 image_pixels=[float(value) for value in display_image.flatten().tolist()],
@@ -530,10 +534,11 @@ def _run_resource_training_job(
         return
 
     model = resource.build_model()
+    runtime = resolve_task_runtime(resource.task)
+    runtime.ensure_training_supported()
     batch_size = max(1, min(resource.batch_size, 64))
     learning_rate = resource.learning_rate
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    loss_fn = torch.nn.CrossEntropyLoss()
     metrics: list[dict] = []
     layers_by_step: list[tuple[int, list[dict]]] = []
     start = time.perf_counter()
@@ -542,20 +547,15 @@ def _run_resource_training_job(
     for step in range(1, steps + 1):
         images, labels = resource.train_batch(step, batch_size)
         step_start = time.perf_counter()
-        logits = model(images)
-        loss = loss_fn(logits, labels)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        step_result = runtime.training_step(model, images, labels, optimizer)
         step_time_ms = (time.perf_counter() - step_start) * 1000
-        accuracy = float((logits.argmax(dim=1) == labels).float().mean().item())
         should_record = step % telemetry_stride == 0 or step == steps
         if should_record:
             metrics.append(
                 {
                     "step": step,
-                    "loss": round(float(loss.item()), 4),
-                    "accuracy": round(accuracy, 4),
+                    "loss": round(step_result.loss, 4),
+                    **{name: round(value, 4) for name, value in step_result.metrics.items()},
                     "learning_rate": learning_rate,
                     "step_time_ms": round(step_time_ms, 2),
                     "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
@@ -563,8 +563,7 @@ def _run_resource_training_job(
                 }
             )
             model.eval()
-            snapshot = forward_with_model(model, images[:1])
-            layers_by_step.append((step, snapshot["layers"]))
+            layers_by_step.append((step, runtime.capture_layers(model, images[:1])))
             model.train()
 
     run_store.save_config(
@@ -641,9 +640,12 @@ async def train_run_from_resource(
     source_root = run_store.run_dir(run_id) / "source"
     try:
         resource = load_training_resource(source_path, source_root=source_root)
+        resource.ensure_training_supported()
         model = resource.build_model()
         example_input = _as_model_input(resource.inference_sample(0)[0])
     except ResourceContractError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TaskRuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc

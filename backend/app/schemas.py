@@ -90,7 +90,9 @@ class PredictionResponse(BaseModel):
 
 class ImageSample(BaseModel):
     index: int
-    label: int
+    task: str = "classification"
+    output: dict[str, Any] = Field(default_factory=dict)
+    label: int | None = None
     label_name: str | None = None
     sample_source: Literal["mnist", "synthetic", "probe"] = "probe"
     image_shape: list[int]

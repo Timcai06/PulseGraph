@@ -11,6 +11,7 @@ import torch
 from torch import nn
 
 from app.runtime import mnist_data
+from app.runtime.task_runtime import TaskRuntimeError, resolve_task_runtime
 
 
 class ResourceContractError(ValueError):
@@ -40,13 +41,27 @@ class LoadedTrainingResource:
 
     @property
     def task(self) -> str:
-        return str(self.metadata.get("task") or "classification")
+        return str(self.metadata.get("task") or "classification").strip().lower()
+
+    @property
+    def runtime(self):
+        try:
+            return resolve_task_runtime(self.task)
+        except TaskRuntimeError as exc:
+            raise ResourceContractError(str(exc)) from exc
+
+    def ensure_training_supported(self) -> None:
+        try:
+            self.runtime.ensure_training_supported()
+        except TaskRuntimeError as exc:
+            raise ResourceContractError(str(exc)) from exc
 
     @property
     def dataset_spec(self) -> dict[str, Any]:
         raw = self.metadata.get("dataset_spec") or self.metadata.get("dataset")
         spec = dict(raw) if isinstance(raw, dict) else {}
-        spec.setdefault("kind", "image_classification" if self.task == "classification" else "vision")
+        default_kind = "image_classification" if self.task == "classification" else "object_detection"
+        spec.setdefault("kind", default_kind)
         spec.setdefault("name", self.name)
         spec.setdefault("source", str(self.metadata.get("data_source") or self.sample_source))
         spec.setdefault("sample_source", self.sample_source)
@@ -68,6 +83,9 @@ class LoadedTrainingResource:
                 schema.setdefault("classes", self.classes)
             if self.class_names is not None:
                 schema.setdefault("class_names", self.class_names)
+        elif self.task == "detection":
+            schema.setdefault("renderer", "box_overlay")
+            schema.setdefault("box_format", "xyxy")
         return schema
 
     @property
@@ -118,7 +136,7 @@ class LoadedTrainingResource:
             raise ResourceContractError("build_model() must return torch.nn.Module.")
         return model
 
-    def train_batch(self, step: int, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def train_batch(self, step: int, batch_size: int) -> tuple[torch.Tensor, Any]:
         train_batch = getattr(self.module, "train_batch", None)
         if callable(train_batch):
             images, labels = train_batch(step, batch_size)
@@ -126,11 +144,12 @@ class LoadedTrainingResource:
             images, labels = _mnist_batch(step, batch_size)
         else:
             images, labels = _synthetic_batch(self.input_shape or [1, 28, 28], self.classes or 10, step, batch_size)
-        if not isinstance(images, torch.Tensor) or not isinstance(labels, torch.Tensor):
-            raise ResourceContractError("train_batch() must return (Tensor, Tensor).")
-        return images.float(), labels.long()
+        try:
+            return self.runtime.normalize_training_batch(images, labels)
+        except TaskRuntimeError as exc:
+            raise ResourceContractError(str(exc)) from exc
 
-    def inference_sample(self, index: int) -> tuple[torch.Tensor, int]:
+    def inference_sample(self, index: int) -> tuple[torch.Tensor, Any]:
         inference_sample = getattr(self.module, "inference_sample", None)
         if callable(inference_sample):
             image, label = inference_sample(index)
@@ -141,7 +160,17 @@ class LoadedTrainingResource:
         if not isinstance(image, torch.Tensor):
             raise ResourceContractError("inference_sample() must return a Tensor image.")
         image_shape_from_sample(image, self.input_shape)
-        return image.float(), int(label)
+        try:
+            target = self.runtime.normalize_sample_target(label)
+        except TaskRuntimeError as exc:
+            raise ResourceContractError(str(exc)) from exc
+        return image.float(), target
+
+    def sample_output(self, target: Any) -> dict[str, Any]:
+        try:
+            return self.runtime.serialize_sample_output(target, self.class_names)
+        except TaskRuntimeError as exc:
+            raise ResourceContractError(str(exc)) from exc
 
 
 def _shape_numel(shape: list[int]) -> int:
@@ -322,6 +351,12 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
         metadata = {}
     if not isinstance(metadata, dict):
         raise ResourceContractError("metadata() must return a dict.")
+    metadata["task"] = str(metadata.get("task") or "classification").strip().lower()
+    try:
+        runtime = resolve_task_runtime(metadata["task"])
+        runtime.validate_resource_metadata(metadata)
+    except TaskRuntimeError as exc:
+        raise ResourceContractError(str(exc)) from exc
 
     if entry_class:
         metadata.setdefault("name", entry_class)
@@ -333,16 +368,10 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
     else:
         sample = _probe_sample_for_model(model)
     image_shape = image_shape_from_sample(sample, resource.input_shape)
-    model_sample = model_input_from_sample(sample)
-    with torch.no_grad():
-        output = model(model_sample)
-    if not isinstance(output, torch.Tensor) or output.dim() != 2:
-        raise ResourceContractError("build_model()(inference_sample()[0]) must return [batch, classes].")
-    resource.metadata.setdefault("classes", int(output.shape[1]))
-    resource.metadata["classes"] = int(resource.metadata["classes"])
-    resource.metadata.setdefault("task", "classification")
-    if resource.task != "classification":
-        raise ResourceContractError("The current training resource runtime supports task='classification'.")
+    try:
+        runtime.validate_model(model, sample, resource.metadata)
+    except TaskRuntimeError as exc:
+        raise ResourceContractError(str(exc)) from exc
     _validate_class_names(resource.metadata, int(resource.metadata["classes"]))
     resource.metadata["input_shape"] = image_shape
     if entry_class and _is_mnist_classifier(resource.input_shape, resource.classes) and _mnist_available():

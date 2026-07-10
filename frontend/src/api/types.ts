@@ -89,7 +89,9 @@ export type PredictionResponse = {
 
 export type ImageSample = {
   index: number;
-  label: number;
+  task?: string;
+  output?: InferenceOutput;
+  label?: number | null;
   label_name?: string | null;
   sample_source: PredictionResponse["sample_source"];
   image_shape: number[];

@@ -50,9 +50,8 @@ Classification should become one implementation of this pattern, not the platfor
 
 ## Current Gaps
 
-- Backend resource loading still rejects non-classification tasks.
-- Training loop assumes `CrossEntropyLoss` and logits shaped `[batch, classes]`.
-- `PredictionResponse` still carries legacy classification fields as required data.
+- Detection resources can import and preview, but their training runtime is not implemented yet.
+- Classification owns the current `CrossEntropyLoss` training implementation; detection has no optimizer path yet.
 - Replay always converts model output into classification output.
 - The frontend has a structured fallback, but no real detection renderer yet.
 - Reports and metrics are still accuracy-centric.
@@ -68,10 +67,10 @@ Classification should become one implementation of this pattern, not the platfor
 
 ### Task 2: Introduce Task Runtime Dispatch
 
-- [ ] Replace hard-coded classification branches with a task runtime dispatcher.
-- [ ] Keep `classification` as the first runtime implementation.
-- [ ] Add a `detection` runtime stub that can validate resource metadata and render sample outputs without full training optimization yet.
-- [ ] Make unsupported tasks fail with a clear platform-capability error.
+- [x] Replace hard-coded classification branches with a task runtime dispatcher.
+- [x] Keep `classification` as the first runtime implementation.
+- [x] Add a `detection` runtime stub that can validate resource metadata and render sample outputs without full training optimization yet.
+- [x] Make unsupported tasks fail with a clear platform-capability error.
 
 ### Task 3: Add Synthetic Detection Resource
 
