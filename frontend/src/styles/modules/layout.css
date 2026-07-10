@@ -253,6 +253,13 @@ h1, h2, h3, p {
   border-color: transparent;
 }
 
+.left-control-drawer:not(.open) .rail-drawer-handle {
+  border: 1px solid var(--glass-border);
+  border-left: 0;
+  background: var(--glass-bg-strong);
+  box-shadow: 12px 0 28px rgba(0, 0, 0, 0.2);
+}
+
 .rail-drawer-handle span {
   writing-mode: vertical-rl;
   text-orientation: mixed;

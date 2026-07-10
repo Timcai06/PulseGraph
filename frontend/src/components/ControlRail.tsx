@@ -416,7 +416,7 @@ export function ControlRail({
   busy,
   errorMessage
 }: Props) {
-  const [railDrawerOpen, setRailDrawerOpen] = useState(false);
+  const [railDrawerOpen, setRailDrawerOpen] = useState(true);
   const [activeView, setActiveView] = useState<ControlView>("resource");
   const [drawerWidth, setDrawerWidth] = useState(0);
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -447,7 +447,7 @@ export function ControlRail({
 
       const handleWidth = handle.offsetWidth || 42;
       const x = railDrawerOpen ? 0 : -(drawer.offsetWidth - handleWidth + drawer.offsetLeft);
-      gsap.killTweensOf(drawer);
+      gsap.killTweensOf(drawer, "x");
 
       if (reducedMotion) {
         gsap.set(drawer, { x });

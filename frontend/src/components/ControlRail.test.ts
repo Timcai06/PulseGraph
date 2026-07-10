@@ -20,6 +20,9 @@ describe("ControlRail", () => {
   it("repositions the floating drawer when responsive width changes", () => {
     expect(controlRailSource).toContain("new ResizeObserver");
     expect(controlRailSource).toContain("drawerWidth, railDrawerOpen, reducedMotion");
+    expect(controlRailSource).toContain("useState(true)");
+    expect(controlRailSource).toContain("-(drawer.offsetWidth - handleWidth + drawer.offsetLeft)");
+    expect(controlRailSource).toContain('gsap.killTweensOf(drawer, "x")');
   });
 
   it("keeps packaged image and manifest assets when importing a resource folder", () => {
