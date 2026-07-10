@@ -29,6 +29,27 @@ def resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, object, 
     )
 
 
+def _optimizer_learning_rate(optimizer: torch.optim.Optimizer, fallback: float) -> float:
+    if not optimizer.param_groups:
+        return fallback
+    value = optimizer.param_groups[0].get("lr", fallback)
+    return float(value) if isinstance(value, (int, float)) else fallback
+
+
+def _set_training_phase(
+    run_store: RunStore,
+    run_registry: RunRegistry,
+    run_id: str,
+    phase: str,
+    message: str,
+    *,
+    steps: int,
+    progress: float,
+) -> None:
+    save_run_config(run_store, run_id, training_status=phase)
+    publish_run_status(run_registry, run_id, phase, message, total_steps=steps, progress=progress)
+
+
 def run_resource_training_job(
     run_id: str,
     source_path: Path,
@@ -71,7 +92,7 @@ def run_resource_training_job(
     start = time.perf_counter()
     try:
         save_run_config(run_store, run_id, training_status="loading", started_at=time.time(), cancel_requested=False)
-        publish_run_status(run_registry, run_id, "loading", "Loading training resource.", total_steps=steps, progress=0.0)
+        publish_run_status(run_registry, run_id, "loading", "Loading resource package.", total_steps=steps, progress=0.01)
         resource = load_training_resource(source_path, source_root=source_root)
         runtime = resolve_task_runtime(resource.task)
         runtime.ensure_training_supported()
@@ -79,13 +100,20 @@ def run_resource_training_job(
         if training_task_controller.is_cancel_requested(run_id):
             raise RuntimeError("__cancelled__")
 
-        save_run_config(run_store, run_id, training_status="building")
-        publish_run_status(run_registry, run_id, "building", "Building model and optimizer.", total_steps=steps, progress=0.0)
+        _set_training_phase(
+            run_store, run_registry, run_id, "building", "Building and validating model.", steps=steps, progress=0.03
+        )
         model = resource.build_model()
         batch_size = max(1, min(resource.batch_size, 64))
-        learning_rate = resource.learning_rate
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        _set_training_phase(
+            run_store, run_registry, run_id, "preparing_data", "Preparing telemetry probe samples.", steps=steps, progress=0.05
+        )
         probe_images, probe_targets, sample_source = resource_probe_samples(resource, min(64, batch_size))
+        _set_training_phase(
+            run_store, run_registry, run_id, "initializing", "Initializing optimizer and training hooks.", steps=steps, progress=0.07
+        )
+        optimizer = resource.build_optimizer(model)
+        learning_rate = _optimizer_learning_rate(optimizer, resource.learning_rate)
 
         model.train()
         save_run_config(
@@ -100,7 +128,7 @@ def run_resource_training_job(
                 raise RuntimeError("__cancelled__")
             images, labels = resource.train_batch(step, batch_size)
             step_start = time.perf_counter()
-            step_result = runtime.training_step(model, images, labels, optimizer)
+            step_result = resource.training_step(model, images, labels, optimizer, step)
             step_time_ms = (time.perf_counter() - step_start) * 1000
             last_step = step
             elapsed_sec = time.perf_counter() - start
@@ -112,9 +140,10 @@ def run_resource_training_job(
                 telemetry_images = probe_images if resource.task == "detection" else images
                 telemetry_targets = probe_targets if resource.task == "detection" else labels
                 telemetry = runtime.telemetry_snapshot(model, telemetry_images, telemetry_targets)
+                resource_metrics = resource.evaluation_metrics(model, telemetry_images, telemetry_targets, step)
                 model.train()
                 layers = telemetry.layers
-                telemetry_metrics = telemetry.metrics
+                telemetry_metrics = {**telemetry.metrics, **resource_metrics}
             publish_training_progress(
                 run_registry,
                 run_store,
@@ -195,6 +224,8 @@ def run_resource_training_job(
             inference_only=False,
             training_status="completed",
             training_recipe="resource-contract",
+            runtime_hooks=resource.runtime_hooks,
+            optimizer=optimizer.__class__.__name__,
             steps=steps,
             telemetry_stride=telemetry_stride,
             batch_size=batch_size,

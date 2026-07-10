@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import tempfile
+import threading
 import time
 import unicodedata
 import uuid
 import zipfile
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,6 +65,9 @@ ALLOWED_SOURCE_SUFFIXES = {".py", ".json", ".png", ".jpg", ".jpeg"}
 GRAPH_NODE_BUDGET = 80
 GROUPED_GRAPH_NODE_BUDGET = 24
 MAX_LIVE_LAYER_SAMPLES = 8
+RESOURCE_PREFLIGHT_CACHE_SIZE = 12
+_resource_preflight_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_resource_preflight_cache_lock = threading.Lock()
 
 app.add_middleware(
     CORSMiddleware,
@@ -637,11 +643,40 @@ def _resource_info(resource) -> dict:
         "output_schema": resource.output_schema,
         "metric_schema": resource.metric_schema,
         "input_shape": resource.input_shape,
+        "batch_size": resource.batch_size,
+        "learning_rate": resource.learning_rate,
         "classes": resource.classes,
         "class_names": resource.class_names,
         "data_source": resource.metadata.get("data_source"),
         "sample_source": resource.sample_source,
+        "runtime_hooks": resource.runtime_hooks,
     }
+
+
+def _resource_preflight_key(collected: list[UploadedSourceFile], entry_file: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(entry_file.encode("utf-8"))
+    for item in sorted(collected, key=lambda candidate: candidate.path):
+        digest.update(item.path.encode("utf-8"))
+        digest.update(len(item.data).to_bytes(8, "big"))
+        digest.update(item.data)
+    return digest.hexdigest()
+
+
+def _remember_resource_preflight(key: str, payload: dict[str, Any]) -> None:
+    with _resource_preflight_cache_lock:
+        _resource_preflight_cache[key] = payload
+        _resource_preflight_cache.move_to_end(key)
+        while len(_resource_preflight_cache) > RESOURCE_PREFLIGHT_CACHE_SIZE:
+            _resource_preflight_cache.popitem(last=False)
+
+
+def _resource_preflight(key: str) -> dict[str, Any] | None:
+    with _resource_preflight_cache_lock:
+        payload = _resource_preflight_cache.get(key)
+        if payload is not None:
+            _resource_preflight_cache.move_to_end(key)
+        return payload
 
 
 def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIMIT) -> list[ImageSample]:
@@ -692,18 +727,26 @@ async def train_run_from_resource(
     if source_path is None:
         raise HTTPException(status_code=400, detail="Entry resource could not be saved.")
     source_root = run_store.run_dir(run_id) / "source"
-    try:
-        resource = load_training_resource(source_path, source_root=source_root)
-        resource.ensure_training_supported()
-        model = resource.build_model()
-        example_input = _as_model_input(resource.inference_sample(0)[0])
-        graph, graph_diagnostics = _build_resource_graph(resource, model, example_input)
-    except ResourceContractError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except TaskRuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
+    preflight_key = _resource_preflight_key(collected, normalized_entry)
+    preflight = _resource_preflight(preflight_key)
+    if preflight is not None:
+        resource_info = dict(preflight["resource"])
+        graph = ModelGraph.model_validate(preflight["graph"])
+        graph_diagnostics = dict(preflight["graph_diagnostics"])
+    else:
+        try:
+            resource = load_training_resource(source_path, source_root=source_root)
+            resource.ensure_training_supported()
+            model = resource.build_model()
+            example_input = _as_model_input(resource.inference_sample(0)[0])
+            graph, graph_diagnostics = _build_resource_graph(resource, model, example_input)
+            resource_info = _resource_info(resource)
+        except ResourceContractError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except TaskRuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
 
     steps = max(1, min(int(steps), 500))
     telemetry_stride = max(1, min(int(telemetry_stride), steps))
@@ -712,25 +755,27 @@ async def train_run_from_resource(
         run_id,
         source="training-resource",
         run_kind="resource-training",
-        resource_name=resource.name,
-        task=resource.task,
+        resource_name=resource_info["name"],
+        task=resource_info.get("task"),
         inference_only=False,
         training_status="queued",
         training_recipe="resource-contract",
         steps=steps,
         telemetry_stride=telemetry_stride,
-        batch_size=resource.batch_size,
-        lr=resource.learning_rate,
+        batch_size=resource_info.get("batch_size"),
+        lr=resource_info.get("learning_rate"),
         entry_file=normalized_entry,
         entry_class="TrainingResource",
-        input_shape=resource.input_shape,
-        classes=resource.classes,
-        class_names=resource.class_names,
-        dataset_spec=resource.dataset_spec,
-        output_schema=resource.output_schema,
-        metric_schema=resource.metric_schema,
-        data_source=resource.metadata.get("data_source"),
-        sample_source=resource.sample_source,
+        input_shape=resource_info.get("input_shape"),
+        classes=resource_info.get("classes"),
+        class_names=resource_info.get("class_names"),
+        dataset_spec=resource_info.get("dataset_spec"),
+        output_schema=resource_info.get("output_schema"),
+        metric_schema=resource_info.get("metric_schema"),
+        data_source=resource_info.get("data_source"),
+        sample_source=resource_info.get("sample_source"),
+        runtime_hooks=resource_info.get("runtime_hooks", []),
+        preflight_reused=preflight is not None,
         weights="training",
         cancel_requested=False,
     )
@@ -761,7 +806,7 @@ async def train_run_from_resource(
     return {
         "run_id": run_id,
         "run_kind": "resource-training",
-        "resource": _resource_info(resource),
+        "resource": resource_info,
         "inference_only": False,
         "status": "started",
         "saved": saved,
@@ -769,6 +814,7 @@ async def train_run_from_resource(
         "entry_class": "TrainingResource",
         "graph": graph.model_dump(),
         "graph_diagnostics": graph_diagnostics,
+        "preflight_reused": preflight is not None,
         "checkpoint": None,
     }
 
@@ -839,8 +885,19 @@ async def preview_training_resource(request: Request, files: list[UploadFile] = 
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
 
+    resource_info = _resource_info(resource)
+    preflight_key = _resource_preflight_key(collected, normalized_entry)
+    _remember_resource_preflight(
+        preflight_key,
+        {
+            "resource": resource_info,
+            "graph": graph.model_dump(),
+            "graph_diagnostics": graph_diagnostics,
+        },
+    )
+
     return {
-        "resource": _resource_info(resource),
+        "resource": resource_info,
         "samples": [sample.model_dump() for sample in samples],
         "files": [item.path for item in collected],
         "entry_file": normalized_entry,

@@ -31,16 +31,22 @@ const READABLE_LABELS: Record<string, string> = {
   loss: "Loss",
   loss_box_reg: "Loss box reg",
   loss_classifier: "Loss classifier",
+  map50: "AP@0.50",
   mean_iou: "Mean IoU",
   memory_peak_mb: "Memory MB",
   samples_per_sec: "Samples / sec",
-  step_time_ms: "Step ms"
+  step_time_ms: "Step ms",
+  precision50: "Precision@0.50",
+  recall50: "Recall@0.50"
 };
 
 const METRIC_TONES: Record<string, MetricSeriesTone> = {
   loss: "amber",
   accuracy: "green",
+  map50: "green",
   mean_iou: "green",
+  precision50: "cyan",
+  recall50: "violet",
   samples_per_sec: "green",
   memory_peak_mb: "violet",
   step_time_ms: "cyan",
@@ -103,8 +109,12 @@ function signalLabel(key: string): string {
   return metricLabel(key);
 }
 
+function isRatioMetric(key: string): boolean {
+  return key === "accuracy" || key === "mean_iou" || key === "map50" || key === "precision50" || key === "recall50";
+}
+
 function metricFormat(key: string): PrimaryMetricSignal["format"] {
-  return key === "accuracy" || key === "mean_iou" ? "percent" : "float";
+  return isRatioMetric(key) ? "percent" : "float";
 }
 
 function metricTone(key: string): MetricSeriesTone {
@@ -112,11 +122,11 @@ function metricTone(key: string): MetricSeriesTone {
 }
 
 function metricAxis(key: string): 0 | 1 {
-  return key === "accuracy" || key === "mean_iou" ? 1 : 0;
+  return isRatioMetric(key) ? 1 : 0;
 }
 
 function metricArea(key: string): boolean {
-  return key === "loss" || key === "accuracy" || key === "mean_iou";
+  return key === "loss" || isRatioMetric(key);
 }
 
 function normalizedTask(task?: string): string | undefined {
@@ -146,22 +156,44 @@ function genericSeriesKeys(points: MetricPoint[], context: MetricSeriesContext):
   return hasMetric(points, "step_time_ms") ? [...selected, "step_time_ms"] : selected;
 }
 
+function schemaMonitors(context: MetricSeriesContext): string[] {
+  return Array.isArray(context.metricSchema?.monitors)
+    ? context.metricSchema.monitors.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
+function schemaGroup(context: MetricSeriesContext, group: MetricGroup): string[] {
+  const groups = context.metricSchema?.groups;
+  if (!groups || typeof groups !== "object" || Array.isArray(groups)) return [];
+  const values = (groups as Record<string, unknown>)[group];
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : [];
+}
+
+function taskSeriesKeys(points: MetricPoint[], context: MetricSeriesContext, task?: string): string[] {
+  const primary = typeof context.metricSchema?.primary === "string" ? context.metricSchema.primary : undefined;
+  const declared = uniqueKeys([primary, ...schemaMonitors(context)]);
+  const defaults = task === "classification" ? [...CLASSIFICATION_SERIES] : task === "detection" ? [...DETECTION_SERIES] : [];
+  if (!declared.length) return defaults.filter((key) => hasMetric(points, key));
+  const keys = uniqueKeys(["loss", ...declared, ...defaults]).filter((key) => hasMetric(points, key));
+  return hasMetric(points, "step_time_ms") && !keys.includes("step_time_ms") ? [...keys, "step_time_ms"] : keys;
+}
+
 export function deriveMetricSeries(points: MetricPoint[], context: MetricSeriesContext = {}): MetricSeriesSpec[] {
   const task = inferredTask(points, context);
-  const keys =
-    task === "classification"
-      ? CLASSIFICATION_SERIES.filter((key) => hasMetric(points, key))
-      : task === "detection"
-        ? DETECTION_SERIES.filter((key) => hasMetric(points, key))
-        : genericSeriesKeys(points, context);
+  const keys = task === "classification" || task === "detection"
+    ? taskSeriesKeys(points, context, task)
+    : genericSeriesKeys(points, context);
 
-  const groupedKeys = context.group === "quality"
-    ? keys.filter((key) => key === "accuracy" || key === "mean_iou")
-    : context.group === "optimization"
-      ? keys.filter((key) => key === "loss" || key.startsWith("loss_") || key === "learning_rate")
-      : context.group === "infra"
-        ? ["step_time_ms", "samples_per_sec", "memory_peak_mb"].filter((key) => hasMetric(points, key))
-        : keys;
+  const declaredGroup = context.group ? schemaGroup(context, context.group) : [];
+  const groupedKeys = declaredGroup.length
+    ? declaredGroup.filter((key) => hasMetric(points, key))
+    : context.group === "quality"
+      ? keys.filter((key) => isRatioMetric(key))
+      : context.group === "optimization"
+        ? keys.filter((key) => key === "loss" || key.startsWith("loss_") || key === "learning_rate")
+        : context.group === "infra"
+          ? ["step_time_ms", "samples_per_sec", "memory_peak_mb"].filter((key) => hasMetric(points, key))
+          : keys;
 
   const visibleKeys = context.group ? groupedKeys : keys;
   return visibleKeys.slice(0, 5).map((key) => ({
@@ -186,9 +218,9 @@ export function derivePrimaryMetricSignal(points: MetricPoint[], context: Metric
   const primary = typeof context.metricSchema?.primary === "string" ? context.metricSchema.primary : undefined;
   const candidates =
     task === "classification"
-      ? ["accuracy", primary]
+      ? [primary, "accuracy"]
       : task === "detection"
-        ? ["mean_iou", primary, "accuracy"]
+        ? [primary, "mean_iou", "accuracy"]
         : [primary, "accuracy", "mean_iou"];
 
   const key = uniqueKeys(candidates).find((candidate) => candidate && hasMetric(points, candidate));

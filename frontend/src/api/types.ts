@@ -151,7 +151,7 @@ export type GraphPayload = {
 };
 
 export type RunStatusPayload = {
-  phase?: "queued" | "loading" | "building" | "training" | "checkpointing" | "completed" | "cancelled" | "failed" | string;
+  phase?: "queued" | "loading" | "building" | "preparing_data" | "initializing" | "training" | "checkpointing" | "completed" | "cancelled" | "failed" | string;
   message?: string | null;
   step?: number | null;
   total_steps?: number | null;
@@ -353,11 +353,15 @@ export type SourceImportResult = {
     output_schema?: OutputSchema | null;
     metric_schema?: MetricSchema | null;
     input_shape?: number[] | null;
+    batch_size?: number | null;
+    learning_rate?: number | null;
     classes?: number | null;
     class_names?: string[] | null;
     data_source?: string | null;
     sample_source?: string | null;
+    runtime_hooks?: string[];
   } | null;
+  preflight_reused?: boolean;
   inference_only: boolean;
   saved: string[];
   entry_file: string;

@@ -70,7 +70,9 @@ export function TelemetryPanel({
             <h2>Training Telemetry</h2>
           </div>
           <div className="telemetry-heading-actions">
-            <span title={runId}>{runId ?? "No active run"}</span>
+            <span className="telemetry-status-message" title={`${progress?.message ?? "No active run"}${runId ? ` · ${runId}` : ""}`}>
+              {progress?.message ?? runId ?? "No active run"}
+            </span>
             {status === "streaming" && onCancel ? (
               <button className="telemetry-cancel" disabled={cancelling} onClick={onCancel} type="button">
                 <Square size={11} /> {cancelling ? "Cancelling" : "Cancel"}

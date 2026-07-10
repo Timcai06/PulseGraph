@@ -4,19 +4,21 @@ This directory is the working plan surface for PulseGraph product and implementa
 
 ## Current Focus
 
-PulseGraph is moving from a classification-focused visualization workbench into a local-first general CV training platform.
+PulseGraph is validating its general CV runtime against a mainstream detector and real images before adding another task family.
 
 The product direction is:
 
 - keep Ops, telemetry, graph replay, inference output, and reports as the core differentiation;
-- support mainstream CV task families through explicit task, dataset, output, metric, and renderer contracts;
-- use object detection as the first non-classification slice because it forces boxes, scores, labels, IoU-style metrics, and image overlay rendering;
+- preserve explicit task, dataset, output, metric, and renderer contracts;
+- make resource startup observable and remove duplicate model construction;
+- allow resources to own optimizer, training-step, and evaluation behavior without bypassing telemetry;
+- validate object detection with Faster R-CNN, Penn-Fudan images, and honestly named AP@0.50 metrics;
 - stay local and trusted for now, without cloud sandbox complexity;
 - add real datasets only when a specific model/task needs them.
 
 ## Documents
 
-- [06-cv-platform-runtime.md](06-cv-platform-runtime.md): current-stage plan for general CV task runtime and object detection support.
+- [07-real-cv-compatibility.md](07-real-cv-compatibility.md): current-stage plan for mainstream real-model compatibility.
 
 ## Working Rule
 

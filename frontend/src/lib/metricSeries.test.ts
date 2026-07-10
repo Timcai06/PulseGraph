@@ -94,4 +94,32 @@ describe("metricSeries", () => {
       "memory_peak_mb"
     ]);
   });
+
+  it("honors resource-declared detection quality metrics and primary signal", () => {
+    const points = [point(1, {
+      loss: 1.4,
+      mean_iou: 0.29,
+      map50: 0.18,
+      precision50: 0.31,
+      recall50: 0.22,
+      step_time_ms: 82
+    })];
+    const metricSchema = {
+      primary: "map50",
+      monitors: ["loss", "map50", "precision50", "recall50", "mean_iou"],
+      groups: { quality: ["map50", "precision50", "recall50", "mean_iou"] }
+    };
+
+    expect(deriveMetricSeries(points, { task: "detection", group: "quality", metricSchema }).map((series) => series.key)).toEqual([
+      "map50",
+      "precision50",
+      "recall50",
+      "mean_iou"
+    ]);
+    expect(derivePrimaryMetricSignal(points, { task: "detection", metricSchema })).toEqual({
+      key: "map50",
+      label: "AP@0.50",
+      format: "percent"
+    });
+  });
 });

@@ -11,7 +11,7 @@ type Props = {
 function isDiagnostic(event: RunEvent) {
   if (event.type === "checkpoint" || event.type === "run_complete") return true;
   if (event.type !== "run_status") return false;
-  return ["queued", "loading", "building", "checkpointing", "failed", "cancelled"].includes(String(event.payload.phase));
+  return ["queued", "loading", "building", "preparing_data", "initializing", "checkpointing", "failed", "cancelled"].includes(String(event.payload.phase));
 }
 
 function eventLabel(event: RunEvent) {

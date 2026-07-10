@@ -107,7 +107,23 @@ def train_batch(step: int, batch_size: int):
 
 def inference_sample(index: int):
     ...
+
+# Optional: use a model-specific optimizer instead of the default Adam.
+def build_optimizer(model):
+    ...
+
+# Optional: own the complete optimization step and return numeric telemetry.
+def training_step(model, images, targets, optimizer, step):
+    return {"loss": loss, "metrics": {"custom_metric": value}}
+
+# Optional: add resource-specific evaluation metrics at telemetry snapshots.
+def evaluation_metrics(model, images, targets, step):
+    return {"map50": value}
 ```
+
+Package resources as a `.zip` when they include local Python modules or immutable fixture assets. Keep `resource.py` at the archive root, preserve package directories, and declare metric grouping through `metadata()["metric_schema"]`. PulseGraph validates the package during preview and reuses that bounded preflight result when the identical upload starts training; model construction and data preparation still run again inside the observable training job.
+
+Hook outputs are validated as finite scalar metrics. A hook failure becomes a failed run with its error preserved in Diagnostics instead of silently falling back to classification behavior.
 
 For ordinary `nn.Module` files, PulseGraph can infer a simple MNIST-like resource when the model is compatible with `1 x 28 x 28` image inputs.
 

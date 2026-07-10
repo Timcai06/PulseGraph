@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import math
 import sys
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ import torch
 from torch import nn
 
 from app.runtime import mnist_data
-from app.runtime.task_runtime import TaskRuntimeError, resolve_task_runtime
+from app.runtime.task_runtime import TaskRuntimeError, TrainingStepResult, resolve_task_runtime
 from app.schemas import ModelGraph
 
 
@@ -26,6 +27,7 @@ class LoadedTrainingResource:
     module: Any
     metadata: dict[str, Any]
     entry_class: str | None = None
+    _model: nn.Module | None = field(default=None, init=False, repr=False)
 
     @property
     def name(self) -> str:
@@ -127,6 +129,8 @@ class LoadedTrainingResource:
         return str(value) if value else "probe"
 
     def build_model(self) -> nn.Module:
+        if self._model is not None:
+            return self._model
         builder = getattr(self.module, "build_model", None)
         if callable(builder):
             model = builder()
@@ -139,7 +143,48 @@ class LoadedTrainingResource:
             raise ResourceContractError("Training resource must define build_model().")
         if not isinstance(model, nn.Module):
             raise ResourceContractError("build_model() must return torch.nn.Module.")
+        self._model = model
         return model
+
+    @property
+    def runtime_hooks(self) -> list[str]:
+        return [
+            name
+            for name in ("build_optimizer", "training_step", "evaluation_metrics")
+            if callable(getattr(self.module, name, None))
+        ]
+
+    def build_optimizer(self, model: nn.Module) -> torch.optim.Optimizer:
+        builder = getattr(self.module, "build_optimizer", None)
+        optimizer = builder(model) if callable(builder) else torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+        if not isinstance(optimizer, torch.optim.Optimizer):
+            raise ResourceContractError("build_optimizer(model) must return torch.optim.Optimizer.")
+        if not optimizer.param_groups:
+            raise ResourceContractError("build_optimizer(model) returned an optimizer without parameter groups.")
+        return optimizer
+
+    def training_step(
+        self,
+        model: nn.Module,
+        images: torch.Tensor,
+        targets: Any,
+        optimizer: torch.optim.Optimizer,
+        step: int,
+    ) -> TrainingStepResult:
+        hook = getattr(self.module, "training_step", None)
+        if not callable(hook):
+            return self.runtime.training_step(model, images, targets, optimizer)
+        result = _call_step_hook(hook, model, images, targets, optimizer, step=step)
+        return _normalize_training_step_result(result)
+
+    def evaluation_metrics(self, model: nn.Module, images: torch.Tensor, targets: Any, step: int) -> dict[str, float]:
+        hook = getattr(self.module, "evaluation_metrics", None)
+        if not callable(hook):
+            return {}
+        result = _call_step_hook(hook, model, images, targets, step=step)
+        if not isinstance(result, dict):
+            raise ResourceContractError("evaluation_metrics(...) must return dict[str, number].")
+        return _normalize_metrics(result, "evaluation_metrics(...)")
 
     def train_batch(self, step: int, batch_size: int) -> tuple[torch.Tensor, Any]:
         train_batch = getattr(self.module, "train_batch", None)
@@ -213,6 +258,52 @@ def _shape_numel(shape: list[int]) -> int:
     for dim in shape:
         total *= int(dim)
     return total
+
+
+def _call_step_hook(hook: Any, *args: Any, step: int) -> Any:
+    try:
+        parameters = inspect.signature(hook).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    return hook(*args, step=step) if "step" in parameters else hook(*args)
+
+
+def _finite_number(value: Any, context: str) -> float:
+    if isinstance(value, torch.Tensor):
+        if value.numel() != 1:
+            raise ResourceContractError(f"{context} must be a scalar number.")
+        value = value.detach().item()
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ResourceContractError(f"{context} must be a scalar number.")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ResourceContractError(f"{context} must be finite.")
+    return number
+
+
+def _normalize_metrics(value: dict[Any, Any], context: str) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ResourceContractError(f"{context} metric names must be non-empty strings.")
+        metrics[key] = _finite_number(item, f"{context} metric '{key}'")
+    return metrics
+
+
+def _normalize_training_step_result(value: Any) -> TrainingStepResult:
+    if isinstance(value, TrainingStepResult):
+        return value
+    if not isinstance(value, dict) or "loss" not in value:
+        raise ResourceContractError(
+            "training_step(...) must return {'loss': number, 'metrics': dict[str, number]}."
+        )
+    raw_metrics = value.get("metrics", {})
+    if not isinstance(raw_metrics, dict):
+        raise ResourceContractError("training_step(...) 'metrics' must be a dict[str, number].")
+    return TrainingStepResult(
+        loss=_finite_number(value["loss"], "training_step(...) loss"),
+        metrics=_normalize_metrics(raw_metrics, "training_step(...)"),
+    )
 
 
 def image_shape_from_sample(sample: torch.Tensor, declared_shape: list[int] | None = None) -> list[int]:
@@ -407,8 +498,11 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
         runtime.validate_model(model, sample, resource.metadata)
     except TaskRuntimeError as exc:
         raise ResourceContractError(str(exc)) from exc
-    _validate_class_names(resource.metadata, int(resource.metadata["classes"]))
     resource.metadata["input_shape"] = image_shape
+    classes = resource.classes
+    if classes is None:
+        raise ResourceContractError("Training resource metadata must declare or infer 'classes'.")
+    _validate_class_names(resource.metadata, classes)
     if entry_class and _is_mnist_classifier(resource.input_shape, resource.classes) and _mnist_available():
         resource.metadata["data_source"] = "mnist"
         resource.metadata["sample_source"] = "mnist"
@@ -420,4 +514,5 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
     resource.metadata["dataset_spec"] = resource.dataset_spec
     resource.metadata["output_schema"] = resource.output_schema
     resource.metadata["metric_schema"] = resource.metric_schema
+    resource.metadata["runtime_hooks"] = resource.runtime_hooks
     return resource

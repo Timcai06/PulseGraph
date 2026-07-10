@@ -111,7 +111,14 @@
 }
 
 .telemetry-heading-actions > span {
-  max-width: 170px;
+  max-width: 280px;
+}
+
+.telemetry-status-message {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .telemetry-cancel {

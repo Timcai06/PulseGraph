@@ -25,9 +25,11 @@ client = TestClient(app)
 def clear_mnist_caches():
     mnist_data.load_train_samples.cache_clear()
     mnist_data.load_test_samples.cache_clear()
+    main_module._resource_preflight_cache.clear()
     yield
     mnist_data.load_train_samples.cache_clear()
     mnist_data.load_test_samples.cache_clear()
+    main_module._resource_preflight_cache.clear()
 
 
 RESOURCE_SOURCE = textwrap.dedent(
@@ -52,6 +54,57 @@ RESOURCE_SOURCE = textwrap.dedent(
 
     def inference_sample(index):
         return torch.ones(1, 4) * index, index % 3
+    """
+)
+
+HOOK_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    def metadata():
+        return {
+            "name": "hook_resource",
+            "classes": 2,
+            "input_shape": [1, 2],
+            "learning_rate": 0.25,
+            "metric_schema": {
+                "primary": "validation_score",
+                "monitors": ["loss", "hook_signal", "validation_score"],
+            },
+        }
+
+
+    def build_model():
+        return nn.Linear(2, 2)
+
+
+    def build_optimizer(model):
+        return torch.optim.SGD(model.parameters(), lr=0.125, momentum=0.5)
+
+
+    def train_batch(step, batch_size):
+        images = torch.ones(batch_size, 2) * step
+        labels = torch.arange(batch_size) % 2
+        return images, labels
+
+
+    def training_step(model, images, targets, optimizer, step):
+        logits = model(images)
+        loss = torch.nn.functional.cross_entropy(logits, targets)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        return {"loss": loss, "metrics": {"hook_signal": step / 10}}
+
+
+    def evaluation_metrics(model, images, targets, step):
+        return {"validation_score": 0.75, "evaluation_step": step}
+
+
+    def inference_sample(index):
+        return torch.ones(1, 2) * index, index % 2
     """
 )
 
@@ -886,6 +939,70 @@ def test_train_resource_endpoint_publishes_run_status_schema_and_lifecycle() -> 
     assert 0 < first_training.payload["progress"] <= 1
     assert "elapsed_sec" in first_training.payload
     assert "eta_sec" in first_training.payload
+
+
+def test_preview_preflight_is_reused_when_starting_the_same_resource() -> None:
+    files = [("files", ("resource.py", RESOURCE_SOURCE.encode(), "text/x-python"))]
+    preview = client.post(
+        "/api/inspect/resource/preview",
+        files=files,
+        data={"entry_file": "resource.py"},
+    )
+
+    response = client.post(
+        "/api/runs/train-resource",
+        files=files,
+        data={"entry_file": "resource.py", "steps": "1", "telemetry_stride": "1"},
+    )
+
+    assert preview.status_code == 200
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preflight_reused"] is True
+    assert payload["graph"] == preview.json()["graph"]
+    detail = client.get(f"/api/runs/{payload['run_id']}/detail").json()
+    assert detail["config"]["preflight_reused"] is True
+
+
+def test_resource_runtime_hooks_drive_optimizer_step_and_evaluation_metrics() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", HOOK_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "2", "telemetry_stride": "1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resource"]["runtime_hooks"] == ["build_optimizer", "training_step", "evaluation_metrics"]
+    detail = client.get(f"/api/runs/{payload['run_id']}/detail").json()
+    assert detail["config"]["optimizer"] == "SGD"
+    assert detail["config"]["lr"] == 0.125
+    assert detail["config"]["runtime_hooks"] == ["build_optimizer", "training_step", "evaluation_metrics"]
+    assert [metric["hook_signal"] for metric in detail["metrics"]] == [0.1, 0.2]
+    assert [metric["validation_score"] for metric in detail["metrics"]] == [0.75, 0.75]
+    phases = [
+        event.payload["phase"]
+        for event in main_module.run_store.load_events(payload["run_id"])
+        if event.type == "run_status"
+    ]
+    assert phases[:5] == ["queued", "loading", "building", "preparing_data", "initializing"]
+
+
+def test_invalid_resource_hook_output_becomes_an_actionable_run_failure() -> None:
+    source = HOOK_RESOURCE_SOURCE.replace(
+        'return {"validation_score": 0.75, "evaluation_step": step}',
+        'return {"validation_score": "not-a-number"}',
+    )
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", source.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "1", "telemetry_stride": "1"},
+    )
+
+    assert response.status_code == 200
+    detail = client.get(f"/api/runs/{response.json()['run_id']}/detail").json()
+    assert detail["config"]["training_status"] == "failed"
+    assert "evaluation_metrics(...) metric 'validation_score' must be a scalar number" in detail["config"]["error"]
 
 
 def test_train_resource_endpoint_aggregates_layer_snapshots_but_preserves_full_details() -> None:

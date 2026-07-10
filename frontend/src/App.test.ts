@@ -192,6 +192,9 @@ describe("App workspace layout", () => {
     expect(telemetryPanelSource).toContain("Infra");
     expect(telemetryPanelSource).toContain("telemetry-chart-layout");
     expect(telemetryPanelSource).toContain("etaSec");
+    expect(telemetryPanelSource).toContain("progress?.message");
+    expect(apiTypesSource).toContain('"preparing_data"');
+    expect(diagnosticsTraySource).toContain('"initializing"');
     expect(diagnosticsTraySource).toContain("No warnings or failures");
     expect(diagnosticsTraySource).not.toContain("layer_snapshot");
     expect(appSource).not.toContain("DockSize");
