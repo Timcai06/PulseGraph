@@ -193,8 +193,10 @@ describe("App workspace layout", () => {
     expect(telemetryPanelSource).toContain("etaSec");
     expect(diagnosticsTraySource).toContain("No warnings or failures");
     expect(diagnosticsTraySource).not.toContain("layer_snapshot");
-    expect(appSource).toContain('type DockSize = "compact" | "standard" | "expanded"');
-    expect(appSource).toContain("dock-size-control");
+    expect(appSource).not.toContain("DockSize");
+    expect(appSource).not.toContain("dock-size-control");
+    expect(appSource).not.toContain("Compact telemetry");
+    expect(appSource).not.toContain("Expanded telemetry");
     expect(apiTypesSource).toContain('type: "run_status"');
     expect(appSource).toContain("progress={stream.progress}");
   });

@@ -18,21 +18,8 @@
   transform: translateY(calc(var(--dock-h) - var(--dock-handle-h)));
 }
 
-.bottom-dock.dock-compact {
-  height: 300px;
-}
-
-.bottom-dock.dock-standard {
-  height: var(--dock-h);
-}
-
-.bottom-dock.dock-expanded {
-  height: min(68vh, 620px);
-}
-
 .dock-handle {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: block;
   align-items: center;
   border: 0;
   border-bottom: 1px solid transparent;
@@ -75,29 +62,6 @@
 
 .dock-toggle svg:last-child {
   margin-left: auto;
-}
-
-.dock-size-control {
-  display: flex;
-  gap: 2px;
-  padding-right: 10px;
-}
-
-.dock-size-control button {
-  width: 30px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.dock-size-control button.active {
-  border-color: var(--accent-border);
-  background: var(--accent-soft);
-  color: var(--accent-text);
 }
 
 .dock-panels {
@@ -413,14 +377,6 @@
 
 .metric-panel .chart {
   min-height: 100px;
-}
-
-.dock-compact .telemetry-vitals {
-  display: none;
-}
-
-.dock-compact .metric-panel .chart {
-  min-height: 80px;
 }
 
 .prob-chart {
@@ -789,15 +745,6 @@
 
 .timeline-scrubber.focus-critical .causal-focus strong {
   color: var(--red);
-}
-
-.dock-compact .timeline-scrubber {
-  gap: 5px;
-  padding: 6px 10px 8px;
-}
-
-.dock-compact .causal-focus {
-  display: none;
 }
 
 .image-preview {

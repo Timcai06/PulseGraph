@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Maximize2, Minimize2, PanelTopOpen } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type {
@@ -99,7 +99,6 @@ type SourceRecipe = {
 };
 
 type CurrentRunKind = "resource-training" | "source-training" | "recorded-training";
-type DockSize = "compact" | "standard" | "expanded";
 
 function preferredResourceEntry(files: NamedSourceFile[]): string | undefined {
   return files.find((file) => file.path === "resource.py" || file.path.endsWith("/resource.py"))?.path ?? files[0]?.path;
@@ -129,7 +128,6 @@ export default function App() {
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
   const [dockOpen, setDockOpen] = useState(false);
-  const [dockSize, setDockSize] = useState<DockSize>("standard");
   const [forwardTick, setForwardTick] = useState(0);
   const [selectedTimelineStep, setSelectedTimelineStep] = useState<number | undefined>();
   const [ghostEdges, setGhostEdges] = useState<GhostEdge[]>([]);
@@ -189,7 +187,7 @@ export default function App() {
         gsap.to(dock, { y, duration: motionDuration("drawer", reducedMotion), ease: motionEase.panel });
       }
     },
-    { dependencies: [dockOpen, dockSize, page, reducedMotion], scope: shellRef }
+    { dependencies: [dockOpen, page, reducedMotion], scope: shellRef }
   );
 
   useEffect(() => {
@@ -610,7 +608,7 @@ export default function App() {
             busy={busy}
             errorMessage={errorMessage}
           />
-          <section className={`bottom-dock dock-${dockSize} ${dockOpen ? "open" : ""}`} ref={dockRef}>
+          <section className={`bottom-dock ${dockOpen ? "open" : ""}`} ref={dockRef}>
             <header className="dock-handle">
               <button className="dock-toggle" type="button" onClick={() => setDockOpen((open) => !open)} aria-expanded={dockOpen}>
                 <i className={`status-dot ${stream.status === "streaming" ? "streaming" : stream.status}`} />
@@ -618,17 +616,6 @@ export default function App() {
                 <span className="dock-run">{stream.runId ?? ""}</span>
                 {dockOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
               </button>
-              <div className="dock-size-control" aria-label="Telemetry panel size">
-                <button className={dockSize === "compact" ? "active" : ""} onClick={() => setDockSize("compact")} title="Compact telemetry" type="button" aria-label="Compact telemetry">
-                  <Minimize2 size={14} />
-                </button>
-                <button className={dockSize === "standard" ? "active" : ""} onClick={() => setDockSize("standard")} title="Standard telemetry" type="button" aria-label="Standard telemetry">
-                  <PanelTopOpen size={14} />
-                </button>
-                <button className={dockSize === "expanded" ? "active" : ""} onClick={() => setDockSize("expanded")} title="Expanded telemetry" type="button" aria-label="Expanded telemetry">
-                  <Maximize2 size={14} />
-                </button>
-              </div>
             </header>
             <div className="dock-panels">
               <TelemetryPanel
