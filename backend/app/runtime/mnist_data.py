@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-DEFAULT_MODEL_PATH = REPO_ROOT / "model_repo" / "platform_validation" / "mnist_digit_recognition" / "outputs" / "mnist_mlp.pt"
+DEFAULT_MODEL_PATH = REPO_ROOT / "training" / "cv" / "outputs" / "mnist_mlp.pt"
 DEFAULT_MNIST_RAW_DIR = REPO_ROOT / "data" / "mnist" / "MNIST" / "raw"
 
 IDX_IMAGE_MAGIC = 2051
