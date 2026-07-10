@@ -459,6 +459,21 @@ def _class_name(class_names: list[str] | None, label: int) -> str | None:
     return class_names[label]
 
 
+def _resource_info(resource) -> dict:
+    return {
+        "name": resource.name,
+        "task": resource.task,
+        "dataset_spec": resource.dataset_spec,
+        "output_schema": resource.output_schema,
+        "metric_schema": resource.metric_schema,
+        "input_shape": resource.input_shape,
+        "classes": resource.classes,
+        "class_names": resource.class_names,
+        "data_source": resource.metadata.get("data_source"),
+        "sample_source": resource.sample_source,
+    }
+
+
 def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIMIT) -> list[ImageSample]:
     samples: list[ImageSample] = []
     class_names = resource.class_names
@@ -571,6 +586,9 @@ def _run_resource_training_job(
             "input_shape": resource.input_shape,
             "classes": resource.classes,
             "class_names": resource.class_names,
+            "dataset_spec": resource.dataset_spec,
+            "output_schema": resource.output_schema,
+            "metric_schema": resource.metric_schema,
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
             "weights": "trained",
@@ -658,6 +676,9 @@ async def train_run_from_resource(
             "input_shape": resource.input_shape,
             "classes": resource.classes,
             "class_names": resource.class_names,
+            "dataset_spec": resource.dataset_spec,
+            "output_schema": resource.output_schema,
+            "metric_schema": resource.metric_schema,
             "data_source": resource.metadata.get("data_source"),
             "sample_source": resource.sample_source,
             "weights": "training",
@@ -669,15 +690,7 @@ async def train_run_from_resource(
     return {
         "run_id": run_id,
         "run_kind": "resource-training",
-        "resource": {
-            "name": resource.name,
-            "task": resource.task,
-            "input_shape": resource.input_shape,
-            "classes": resource.classes,
-            "class_names": resource.class_names,
-            "data_source": resource.metadata.get("data_source"),
-            "sample_source": resource.sample_source,
-        },
+        "resource": _resource_info(resource),
         "inference_only": False,
         "status": "started",
         "saved": saved,
@@ -755,15 +768,7 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
             )
 
     return {
-        "resource": {
-            "name": resource.name,
-            "task": resource.task,
-            "input_shape": resource.input_shape,
-            "classes": resource.classes,
-            "class_names": resource.class_names,
-            "data_source": resource.metadata.get("data_source"),
-            "sample_source": resource.sample_source,
-        },
+        "resource": _resource_info(resource),
         "samples": [sample.model_dump() for sample in samples],
         "files": [path for path, _ in collected],
         "entry_file": normalized_entry,

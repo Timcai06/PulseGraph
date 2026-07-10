@@ -60,6 +60,32 @@ function toNamedFiles(list: FileList | null): NamedSourceFile[] {
     .map(({ file, path }) => ({ file, path }));
 }
 
+function textValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() ? value : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (Array.isArray(value) && value.length) {
+    return value
+      .map((item) => (typeof item === "string" || typeof item === "number" ? String(item) : undefined))
+      .filter(Boolean)
+      .join(", ");
+  }
+  return undefined;
+}
+
+function resourceContractRows(resource?: LoadedResourceSummary): { label: string; value: string }[] {
+  if (!resource) return [];
+  const datasetSpec = resource.datasetSpec;
+  const outputSchema = resource.outputSchema;
+  const metricSchema = resource.metricSchema;
+  const rows = [
+    { label: "Task", value: resource.task ?? textValue(outputSchema?.kind) },
+    { label: "Dataset", value: textValue(datasetSpec?.name) ?? textValue(datasetSpec?.source) ?? resource.dataSource },
+    { label: "Output", value: textValue(outputSchema?.renderer) ?? textValue(outputSchema?.kind) },
+    { label: "Metric", value: textValue(metricSchema?.primary) ?? textValue(metricSchema?.monitors) }
+  ];
+  return rows.flatMap((row) => (row.value ? [{ label: row.label, value: row.value }] : []));
+}
+
 export function ControlRail({
   onResourceUpload,
   loadedResource,
@@ -95,6 +121,8 @@ export function ControlRail({
     input.setAttribute("directory", "");
     input.setAttribute("webkitdirectory", "");
   }, []);
+
+  const contractRows = resourceContractRows(loadedResource);
 
   useGSAP(
     () => {
@@ -178,6 +206,16 @@ export function ControlRail({
                 {loadedResource.classes ?? "?"} classes
                 {loadedResource.dataSource ? ` · ${loadedResource.dataSource}` : ""}
               </p>
+              {contractRows.length ? (
+                <dl className="resource-contract-grid" aria-label="resource task contract">
+                  {contractRows.map((row) => (
+                    <div key={row.label}>
+                      <dt>{row.label}</dt>
+                      <dd title={row.value}>{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
               {loadedResource.samples?.length ? (
                 <div className="resource-samples" aria-label="resource preview samples">
                   {loadedResource.samples.slice(0, 8).map((sample) => (

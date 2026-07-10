@@ -54,6 +54,21 @@ RGB_RESOURCE_SOURCE = textwrap.dedent(
     def metadata():
         return {
             "name": "rgb_resource",
+            "task": "classification",
+            "dataset": {
+                "kind": "image_classification",
+                "name": "tiny_rgb",
+                "source": "synthetic-rgb",
+                "splits": ["train", "preview"],
+            },
+            "output_schema": {
+                "kind": "classification",
+                "renderer": "probability_chart",
+            },
+            "metric_schema": {
+                "primary": "accuracy",
+                "monitors": ["loss", "accuracy"],
+            },
             "classes": 3,
             "class_names": ["red", "green", "blue"],
             "input_shape": [3, 2, 2],
@@ -334,6 +349,11 @@ def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None
     )
 
     assert preview.status_code == 200
+    assert preview.json()["resource"]["task"] == "classification"
+    assert preview.json()["resource"]["dataset_spec"]["name"] == "tiny_rgb"
+    assert preview.json()["resource"]["dataset_spec"]["splits"] == ["train", "preview"]
+    assert preview.json()["resource"]["output_schema"]["renderer"] == "probability_chart"
+    assert preview.json()["resource"]["metric_schema"]["primary"] == "accuracy"
     assert preview.json()["resource"]["class_names"] == ["red", "green", "blue"]
     assert preview.json()["resource"]["input_shape"] == [3, 2, 2]
     samples = preview.json()["samples"]
@@ -351,10 +371,16 @@ def test_train_resource_endpoint_transmits_class_names_and_image_shape() -> None
     payload = response.json()
     run_id = payload["run_id"]
     assert payload["resource"]["task"] == "classification"
+    assert payload["resource"]["dataset_spec"]["source"] == "synthetic-rgb"
+    assert payload["resource"]["output_schema"]["kind"] == "classification"
+    assert payload["resource"]["metric_schema"]["monitors"] == ["loss", "accuracy"]
     assert payload["resource"]["class_names"] == ["red", "green", "blue"]
 
     detail = client.get(f"/api/runs/{run_id}/detail").json()
     assert detail["config"]["task"] == "classification"
+    assert detail["config"]["dataset_spec"]["name"] == "tiny_rgb"
+    assert detail["config"]["output_schema"]["renderer"] == "probability_chart"
+    assert detail["config"]["metric_schema"]["primary"] == "accuracy"
     assert detail["config"]["class_names"] == ["red", "green", "blue"]
 
     forward = client.get(f"/api/runs/{run_id}/forward?index=2").json()

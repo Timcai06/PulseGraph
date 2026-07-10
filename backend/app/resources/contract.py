@@ -43,6 +43,47 @@ class LoadedTrainingResource:
         return str(self.metadata.get("task") or "classification")
 
     @property
+    def dataset_spec(self) -> dict[str, Any]:
+        raw = self.metadata.get("dataset_spec") or self.metadata.get("dataset")
+        spec = dict(raw) if isinstance(raw, dict) else {}
+        spec.setdefault("kind", "image_classification" if self.task == "classification" else "vision")
+        spec.setdefault("name", self.name)
+        spec.setdefault("source", str(self.metadata.get("data_source") or self.sample_source))
+        spec.setdefault("sample_source", self.sample_source)
+        if self.input_shape is not None:
+            spec.setdefault("input_shape", self.input_shape)
+        if self.classes is not None:
+            spec.setdefault("classes", self.classes)
+        return spec
+
+    @property
+    def output_schema(self) -> dict[str, Any]:
+        raw = self.metadata.get("output_schema")
+        schema = dict(raw) if isinstance(raw, dict) else {}
+        schema.setdefault("kind", self.task)
+        if self.task == "classification":
+            schema.setdefault("renderer", "probability_chart")
+            schema.setdefault("probabilities", True)
+            if self.classes is not None:
+                schema.setdefault("classes", self.classes)
+            if self.class_names is not None:
+                schema.setdefault("class_names", self.class_names)
+        return schema
+
+    @property
+    def metric_schema(self) -> dict[str, Any]:
+        raw = self.metadata.get("metric_schema")
+        schema = dict(raw) if isinstance(raw, dict) else {}
+        if self.task == "classification":
+            schema.setdefault("primary", "accuracy")
+            schema.setdefault("monitors", ["loss", "accuracy"])
+            schema.setdefault("loss", "cross_entropy")
+        else:
+            schema.setdefault("primary", "loss")
+            schema.setdefault("monitors", ["loss"])
+        return schema
+
+    @property
     def input_shape(self) -> list[int] | None:
         value = self.metadata.get("input_shape")
         if not isinstance(value, (list, tuple)):
@@ -312,4 +353,7 @@ def load_training_resource(source_path: Path, source_root: Path | None = None) -
         resource.metadata.setdefault("sample_source", "synthetic")
     else:
         resource.metadata.setdefault("sample_source", "probe")
+    resource.metadata["dataset_spec"] = resource.dataset_spec
+    resource.metadata["output_schema"] = resource.output_schema
+    resource.metadata["metric_schema"] = resource.metric_schema
     return resource

@@ -254,16 +254,47 @@ export type ImportArtifactResult = {
   created: boolean;
 };
 
+export type DatasetSpec = {
+  kind?: string;
+  name?: string;
+  source?: string;
+  sample_source?: string;
+  splits?: string[];
+  input_shape?: number[];
+  classes?: number;
+  [key: string]: unknown;
+};
+
+export type OutputSchema = {
+  kind?: string;
+  renderer?: string;
+  probabilities?: boolean;
+  classes?: number;
+  class_names?: string[];
+  [key: string]: unknown;
+};
+
+export type MetricSchema = {
+  primary?: string;
+  monitors?: string[];
+  loss?: string;
+  [key: string]: unknown;
+};
+
 export type SourceImportResult = {
   run_id: string;
   run_kind: "source-import" | "source-training" | "resource-training";
   resource?: {
     name: string;
+    task?: string | null;
+    dataset_spec?: DatasetSpec | null;
+    output_schema?: OutputSchema | null;
+    metric_schema?: MetricSchema | null;
     input_shape?: number[] | null;
     classes?: number | null;
     class_names?: string[] | null;
     data_source?: string | null;
-    sample_source?: PredictionResponse["sample_source"] | null;
+    sample_source?: string | null;
   } | null;
   inference_only: boolean;
   saved: string[];
@@ -279,6 +310,10 @@ export type SourceImportResult = {
 
 export type ResourcePreviewInfo = {
   name: string;
+  task?: string | null;
+  dataset_spec?: DatasetSpec | null;
+  output_schema?: OutputSchema | null;
+  metric_schema?: MetricSchema | null;
   input_shape?: number[] | null;
   classes?: number | null;
   class_names?: string[] | null;

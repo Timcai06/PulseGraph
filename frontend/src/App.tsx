@@ -2,7 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import type { GraphNode, ImageSample, ModelGraph, NamedSourceFile, PredictionResponse, RunSummary } from "./api/client";
+import type {
+  DatasetSpec,
+  GraphNode,
+  ImageSample,
+  MetricSchema,
+  ModelGraph,
+  NamedSourceFile,
+  OutputSchema,
+  PredictionResponse,
+  RunSummary
+} from "./api/client";
 import {
   deleteRun,
   getDemoModel,
@@ -67,6 +77,10 @@ function initialTheme(): Theme {
 export type LoadedResourceSummary = {
   name: string;
   fileCount: number;
+  task?: string;
+  datasetSpec?: DatasetSpec | null;
+  outputSchema?: OutputSchema | null;
+  metricSchema?: MetricSchema | null;
   inputShape?: number[];
   classes?: number;
   classNames?: string[];
@@ -256,6 +270,10 @@ export default function App() {
         summary: {
           name: preview.resource.name,
           fileCount: preview.files.length,
+          task: preview.resource.task ?? undefined,
+          datasetSpec: preview.resource.dataset_spec ?? null,
+          outputSchema: preview.resource.output_schema ?? null,
+          metricSchema: preview.resource.metric_schema ?? null,
           inputShape: preview.resource.input_shape ?? undefined,
           classes: preview.resource.classes ?? undefined,
           classNames: preview.resource.class_names ?? undefined,

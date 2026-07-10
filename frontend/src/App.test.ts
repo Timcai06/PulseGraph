@@ -93,6 +93,20 @@ describe("App workspace layout", () => {
     expect(runDetailPanelSource).toContain("prediction_name");
   });
 
+  it("carries vision task contract metadata into the resource panel", () => {
+    expect(apiTypesSource).toContain("DatasetSpec");
+    expect(apiTypesSource).toContain("OutputSchema");
+    expect(apiTypesSource).toContain("MetricSchema");
+    expect(appSource).toContain("datasetSpec: preview.resource.dataset_spec");
+    expect(appSource).toContain("outputSchema: preview.resource.output_schema");
+    expect(appSource).toContain("metricSchema: preview.resource.metric_schema");
+    expect(controlRailSource).toContain("resourceContractRows");
+    expect(controlRailSource).toContain("resource-contract-grid");
+    expect(controlRailSource).toContain("datasetSpec");
+    expect(controlRailSource).toContain("outputSchema");
+    expect(controlRailSource).toContain("metricSchema");
+  });
+
   it("can export and copy a shareable run report", () => {
     expect(apiHttpSource).toContain("downloadRunReportMarkdown");
     expect(apiHttpSource).toContain("/report/export.md");
