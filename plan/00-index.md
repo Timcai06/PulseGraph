@@ -16,11 +16,6 @@ The product direction is:
 
 ## Documents
 
-- [01-ops-product-vision.md](01-ops-product-vision.md): what Ops should ultimately become and why.
-- [02-ops-information-architecture.md](02-ops-information-architecture.md): screen structure, hierarchy, and interaction model.
-- [03-ops-data-contract.md](03-ops-data-contract.md): existing data we can use now and future telemetry needed later.
-- [04-ops-v2-implementation-plan.md](04-ops-v2-implementation-plan.md): executable task plan for the next build phase.
-- [05-ops-composer.md](05-ops-composer.md): next-stage design for port semantics and Ghost Compose.
 - [06-cv-platform-runtime.md](06-cv-platform-runtime.md): current-stage plan for general CV task runtime and object detection support.
 
 ## Working Rule
