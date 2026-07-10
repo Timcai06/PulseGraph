@@ -11,6 +11,7 @@ const EVENT_TYPES: RunEventType[] = [
   "config_registered",
   "graph_registered",
   "run_status",
+  "training_stage",
   "run_complete"
 ];
 

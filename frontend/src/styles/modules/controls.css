@@ -8,6 +8,10 @@
   overflow: hidden;
 }
 
+.control-rail.contextual {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .control-rail-header {
   display: flex;
   align-items: flex-start;

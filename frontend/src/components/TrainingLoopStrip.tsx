@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, ChevronDown, ChevronUp, GitBranch, RefreshCw } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import type { TrainingLoopStage } from "../lib/trainingLoop";
+import type { TrainingLoopModel, TrainingLoopStage } from "../lib/trainingLoop";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { motionDuration, motionDurations, motionEase, motionStagger } from "../lib/motion";
 
@@ -11,18 +11,65 @@ gsap.registerPlugin(useGSAP);
 const TOP_DRAWER_HANDLE_PX = 42;
 
 type Props = {
-  stages: TrainingLoopStage[];
+  model: TrainingLoopModel;
+  onStageSelect?: (stage: TrainingLoopStage) => void;
 };
 
-export function TrainingLoopStrip({ stages }: Props) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [activeStageId, setActiveStageId] = useState<TrainingLoopStage["id"] | undefined>(
-    stages.find((stage) => stage.id === "forward")?.id ?? stages[0]?.id
+function stageProgress(model: TrainingLoopModel) {
+  if (model.totalSteps) return `Step ${model.currentStep}/${model.totalSteps}`;
+  return model.currentStep ? `Step ${model.currentStep}` : "No active step";
+}
+
+function evidenceLabel(stage: TrainingLoopStage) {
+  const labels = {
+    prepare: "Open Prepare",
+    ops: "Open Ops",
+    telemetry: "Open Telemetry",
+    diagnostics: "Open Diagnostics",
+    checkpoint: "Open Checkpoints",
+    evaluate: "Open Evaluate"
+  };
+  return stage.evidence ? labels[stage.evidence] : undefined;
+}
+
+function StageButton({
+  stage,
+  selected,
+  onSelect
+}: {
+  stage: TrainingLoopStage;
+  selected: boolean;
+  onSelect: (stage: TrainingLoopStage) => void;
+}) {
+  return (
+    <button
+      aria-pressed={selected}
+      className={`loop-stage ${stage.state} ${selected ? "open" : ""}`}
+      onClick={() => onSelect(stage)}
+      type="button"
+    >
+      <i aria-hidden="true" />
+      <span>{stage.label}</span>
+      {stage.durationMs != null ? <em>{stage.durationMs < 1000 ? `${stage.durationMs.toFixed(0)}ms` : `${(stage.durationMs / 1000).toFixed(1)}s`}</em> : null}
+    </button>
   );
-  const activeStage = stages.find((stage) => stage.id === activeStageId) ?? stages[0];
+}
+
+export function TrainingLoopStrip({ model, onStageSelect }: Props) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedStageKey, setSelectedStageKey] = useState<string | undefined>();
+  const activeStage = model.activeStage;
+  const selectedStage = [...model.lifecycle, ...model.stepLoop, ...model.milestones].find(
+    (stage) => `${stage.scope}:${stage.id}` === selectedStageKey
+  ) ?? activeStage;
   const drawerRef = useRef<HTMLElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (drawerOpen || !activeStage) return;
+    setSelectedStageKey(`${activeStage.scope}:${activeStage.id}`);
+  }, [activeStage, drawerOpen]);
 
   useGSAP(
     () => {
@@ -36,7 +83,7 @@ export function TrainingLoopStrip({ stages }: Props) {
       const expandedHeight = Math.min(contentHeight, maxExpandedHeight);
       const bodyMaxHeight = Math.max(0, expandedHeight - TOP_DRAWER_HANDLE_PX);
       const drawerHeight = drawerOpen ? expandedHeight : TOP_DRAWER_HANDLE_PX;
-      const stageTargets = body.querySelectorAll(".loop-stage, .stage-drawer-panel");
+      const stageTargets = body.querySelectorAll(".loop-stage, .loop-level, .stage-evidence-bar");
       gsap.killTweensOf([drawer, body, stageTargets]);
 
       if (reducedMotion) {
@@ -53,7 +100,6 @@ export function TrainingLoopStrip({ stages }: Props) {
       }
 
       const timeline = gsap.timeline({ defaults: { ease: motionEase.panel, overwrite: "auto" } });
-
       if (drawerOpen) {
         timeline
           .to(drawer, { height: expandedHeight, duration: motionDuration("drawer", reducedMotion) }, 0)
@@ -69,41 +115,31 @@ export function TrainingLoopStrip({ stages }: Props) {
               duration: motionDurations.panel,
               ease: motionEase.standard
             },
-            0.1
+            0.08
           )
           .fromTo(
             stageTargets,
-            { autoAlpha: 0, y: -6 },
-            { autoAlpha: 1, y: 0, duration: motionDurations.quick, ease: motionEase.standard, stagger: motionStagger.compact },
-            0.18
+            { autoAlpha: 0, y: -5 },
+            { autoAlpha: 1, y: 0, duration: motionDurations.quick, stagger: motionStagger.compact, ease: motionEase.standard },
+            0.16
           );
       } else {
         timeline
-          .to(
-            body,
-            {
-              autoAlpha: 0,
-              maxHeight: 0,
-              overflowY: "hidden",
-              y: -8,
-              pointerEvents: "none",
-              duration: motionDurations.quick,
-              ease: motionEase.standard
-            },
-            0
-          )
+          .to(body, { autoAlpha: 0, maxHeight: 0, overflowY: "hidden", y: -8, pointerEvents: "none", duration: motionDurations.quick }, 0)
           .to(drawer, { height: TOP_DRAWER_HANDLE_PX, duration: motionDuration("drawer", reducedMotion) }, 0);
       }
     },
-    { dependencies: [drawerOpen, activeStageId, activeStage?.detail, reducedMotion], scope: drawerRef }
+    { dependencies: [drawerOpen, selectedStageKey, model.message, reducedMotion], scope: drawerRef }
   );
 
+  const selectStage = (stage: TrainingLoopStage) => {
+    setSelectedStageKey(`${stage.scope}:${stage.id}`);
+    setDrawerOpen(true);
+    onStageSelect?.(stage);
+  };
+
   return (
-    <section
-      className={`top-training-drawer ${drawerOpen ? "open" : ""}`}
-      aria-label="training loop drawer"
-      ref={drawerRef}
-    >
+    <section className={`top-training-drawer ${drawerOpen ? "open" : ""}`} aria-label="training loop drawer" ref={drawerRef}>
       <button
         aria-controls="training-loop-drawer-body"
         aria-expanded={drawerOpen}
@@ -111,51 +147,60 @@ export function TrainingLoopStrip({ stages }: Props) {
         onClick={() => setDrawerOpen((current) => !current)}
         type="button"
       >
-        <i className={`training-loop-status-dot ${activeStage?.state ?? "idle"}`} aria-hidden="true" />
+        <i className={`training-loop-status-dot ${activeStage?.state ?? "pending"}`} aria-hidden="true" />
         <span>Training Loop</span>
-        <strong>{activeStage ? `${activeStage.label}: ${activeStage.detail}` : "waiting for telemetry"}</strong>
+        <strong>{activeStage ? `${stageProgress(model)} · ${activeStage.label}` : stageProgress(model)}</strong>
+        <em>{model.message}</em>
         {drawerOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
       </button>
 
       <div className="training-loop-drawer-body" id="training-loop-drawer-body" aria-hidden={!drawerOpen} ref={bodyRef}>
-        <div className="loop-stage-row" role="list" aria-label="training loop stages">
-          {stages.map((stage) => (
-            <button
-              aria-pressed={activeStageId === stage.id}
-              className={`loop-stage ${stage.state} ${activeStageId === stage.id ? "open" : ""}`}
-              key={stage.id}
-              onClick={() => {
-                setActiveStageId(stage.id);
-                setDrawerOpen(true);
-              }}
-              type="button"
-            >
-              <span>{stage.label}</span>
-              <strong>{stage.detail}</strong>
-            </button>
-          ))}
+        <section className="loop-level lifecycle-level" aria-label="run lifecycle">
+          <header><span>Run Lifecycle</span><em>{model.eventDriven ? "runtime events" : "legacy evidence"}</em></header>
+          <div className="lifecycle-stage-row" role="list">
+            {model.lifecycle.map((stage, index) => (
+              <div className="loop-stage-with-link" key={stage.id}>
+                <StageButton stage={stage} selected={selectedStage === stage} onSelect={selectStage} />
+                {index < model.lifecycle.length - 1 ? <ArrowRight size={12} aria-hidden="true" /> : null}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="loop-execution-grid">
+          <section className="loop-level step-loop-level" aria-label="repeated training step">
+            <header><span><RefreshCw size={13} /> Step Loop</span><em>{stageProgress(model)}</em></header>
+            <div className="step-stage-row" role="list">
+              {model.stepLoop.map((stage, index) => (
+                <div className="loop-stage-with-link" key={stage.id}>
+                  <StageButton stage={stage} selected={selectedStage === stage} onSelect={selectStage} />
+                  {index < model.stepLoop.length - 1 ? <ArrowRight size={12} aria-hidden="true" /> : null}
+                </div>
+              ))}
+            </div>
+            <div className="loop-return"><RefreshCw size={12} /> next batch</div>
+          </section>
+
+          <section className="loop-level milestone-level" aria-label="training milestones">
+            <header><span><GitBranch size={13} /> Milestones</span><em>periodic</em></header>
+            <div className="milestone-stage-row" role="list">
+              {model.milestones.map((stage) => (
+                <StageButton key={stage.id} stage={stage} selected={selectedStage === stage} onSelect={selectStage} />
+              ))}
+            </div>
+          </section>
         </div>
 
-        {activeStage && (
-          <section className={`stage-drawer-panel ${activeStage.state}`} aria-live="polite">
-            <header>
-              <span>{activeStage.label}</span>
-              <strong>{activeStage.detail}</strong>
-            </header>
-            <p>{stageDetailCopy[activeStage.id]}</p>
+        {selectedStage ? (
+          <section className={`stage-evidence-bar ${selectedStage.state}`} aria-live="polite">
+            <div><span>{selectedStage.label}</span><strong>{selectedStage.detail}</strong></div>
+            <em>{selectedStage.state}</em>
+            {selectedStage.evidence ? (
+              <button type="button" onClick={() => onStageSelect?.(selectedStage)}>{evidenceLabel(selectedStage)}</button>
+            ) : null}
           </section>
-        )}
+        ) : null}
       </div>
     </section>
   );
 }
-
-const stageDetailCopy: Record<TrainingLoopStage["id"], string> = {
-  data: "Shows whether a training resource is loaded and ready to supply batches.",
-  forward: "Shows whether PulseGraph has an executable operator graph for the current model.",
-  loss: "Tracks the latest loss evidence emitted by the training stream.",
-  backward: "Uses layer snapshots as the first signal that gradient-side telemetry exists.",
-  optimizer: "Shows optimizer evidence such as learning rate when it is available.",
-  checkpoint: "Shows whether the run has produced checkpoint evidence for replay or evaluation.",
-  eval: "Shows whether prediction, replay, or completed-run evidence is available."
-};

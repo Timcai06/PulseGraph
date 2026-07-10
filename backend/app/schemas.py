@@ -221,6 +221,7 @@ class RunEvent(BaseModel):
     source: Literal["training", "runtime_hook", "checkpoint", "infra", "plugin", "animation"]
     type: Literal[
         "run_status",
+        "training_stage",
         "metric",
         "layer_snapshot",
         "infra",

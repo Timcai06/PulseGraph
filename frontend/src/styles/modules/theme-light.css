@@ -68,7 +68,8 @@
 }
 
 [data-theme="light"] .top-training-drawer,
-[data-theme="light"] .stage-drawer-panel,
+[data-theme="light"] .loop-level,
+[data-theme="light"] .stage-evidence-bar,
 [data-theme="light"] .layer-inspector {
   background: rgba(255, 255, 255, 0.94);
 }

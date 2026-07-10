@@ -11,6 +11,149 @@
   inset: 0;
 }
 
+.workspace-prepare .graph-stage {
+  bottom: 16px;
+}
+
+.evaluate-workspace {
+  position: absolute;
+  top: calc(var(--topbar-h) + 8px);
+  right: 16px;
+  bottom: 16px;
+  left: 58px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  background: var(--glass-bg-strong);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.evaluate-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 64px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.evaluate-workspace-header > div:first-child {
+  min-width: 0;
+}
+
+.evaluate-workspace-header > div:first-child > span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.evaluate-workspace-header h2 {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evaluate-run-context {
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  font-family: var(--font-mono);
+}
+
+.evaluate-header-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.evaluate-header-actions > button {
+  width: auto;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 10px;
+}
+
+.evaluate-run-context span,
+.evaluate-run-context em {
+  max-width: 420px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evaluate-run-context span {
+  color: var(--text-soft);
+}
+
+.evaluate-workspace-body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.evaluate-output-surface {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.evaluate-output-surface > .panel-heading {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.evaluate-output-surface .inference-body {
+  grid-template-columns: minmax(220px, 0.52fr) minmax(360px, 1fr);
+  align-items: stretch;
+  padding: 20px 22px;
+}
+
+.evaluate-output-surface .recognition-image {
+  align-content: center;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  padding-right: 22px;
+}
+
+.evaluate-output-surface .inference-result {
+  align-content: center;
+}
+
+.evaluate-empty-state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.evaluate-empty-state span {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.evaluate-empty-state em {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+}
+
 /* two dot layers: a fine grid plus sparse brighter "stars", drifting slowly.
    Both layers shift one full 130px period (5 × 26px) so the loop is seamless. */
 .stage::before {

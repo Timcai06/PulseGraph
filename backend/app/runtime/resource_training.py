@@ -9,7 +9,13 @@ import torch
 from app.events.run_registry import RunRegistry
 from app.events.run_store import RunStore
 from app.events.training_control import TrainingTaskController
-from app.events.training_events import build_run_event, publish_run_status, publish_training_progress, save_run_config
+from app.events.training_events import (
+    build_run_event,
+    publish_run_status,
+    publish_training_progress,
+    publish_training_stage,
+    save_run_config,
+)
 from app.inspector.fingerprint import fingerprint_state_dict
 from app.resources.contract import load_training_resource, model_input_from_sample
 from app.runtime.task_runtime import resolve_task_runtime
@@ -48,6 +54,57 @@ def _set_training_phase(
 ) -> None:
     save_run_config(run_store, run_id, training_status=phase)
     publish_run_status(run_registry, run_id, phase, message, total_steps=steps, progress=progress)
+
+
+def _start_stage(
+    run_registry: RunRegistry,
+    run_id: str,
+    scope: str,
+    stage: str,
+    message: str,
+    *,
+    step: int,
+    steps: int,
+    progress: float | None = None,
+) -> float:
+    publish_training_stage(
+        run_registry,
+        run_id,
+        scope,
+        stage,
+        "active",
+        message,
+        step=step,
+        total_steps=steps,
+        progress=progress,
+    )
+    return time.perf_counter()
+
+
+def _finish_stage(
+    run_registry: RunRegistry,
+    run_id: str,
+    scope: str,
+    stage: str,
+    message: str,
+    started_at: float,
+    *,
+    step: int,
+    steps: int,
+    progress: float | None = None,
+) -> None:
+    publish_training_stage(
+        run_registry,
+        run_id,
+        scope,
+        stage,
+        "completed",
+        message,
+        step=step,
+        total_steps=steps,
+        duration_ms=(time.perf_counter() - started_at) * 1000,
+        progress=progress,
+    )
 
 
 def run_resource_training_job(
@@ -90,12 +147,30 @@ def run_resource_training_job(
 
     last_step = 0
     start = time.perf_counter()
+    active_stage = "queued"
     try:
+        publish_training_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            "queued",
+            "completed",
+            "Training left the queue.",
+            total_steps=steps,
+            progress=0.01,
+        )
         save_run_config(run_store, run_id, training_status="loading", started_at=time.time(), cancel_requested=False)
         publish_run_status(run_registry, run_id, "loading", "Loading resource package.", total_steps=steps, progress=0.01)
+        active_stage = "loading"
+        stage_started = _start_stage(
+            run_registry, run_id, "lifecycle", "loading", "Loading resource package.", step=0, steps=steps, progress=0.01
+        )
         resource = load_training_resource(source_path, source_root=source_root)
         runtime = resolve_task_runtime(resource.task)
         runtime.ensure_training_supported()
+        _finish_stage(
+            run_registry, run_id, "lifecycle", "loading", "Resource package loaded.", stage_started, step=0, steps=steps, progress=0.03
+        )
 
         if training_task_controller.is_cancel_requested(run_id):
             raise RuntimeError("__cancelled__")
@@ -103,17 +178,38 @@ def run_resource_training_job(
         _set_training_phase(
             run_store, run_registry, run_id, "building", "Building and validating model.", steps=steps, progress=0.03
         )
+        active_stage = "building"
+        stage_started = _start_stage(
+            run_registry, run_id, "lifecycle", "building", "Building and validating model.", step=0, steps=steps, progress=0.03
+        )
         model = resource.build_model()
+        _finish_stage(
+            run_registry, run_id, "lifecycle", "building", "Model ready.", stage_started, step=0, steps=steps, progress=0.05
+        )
         batch_size = max(1, min(resource.batch_size, 64))
         _set_training_phase(
             run_store, run_registry, run_id, "preparing_data", "Preparing telemetry probe samples.", steps=steps, progress=0.05
         )
+        active_stage = "preparing_data"
+        stage_started = _start_stage(
+            run_registry, run_id, "lifecycle", "preparing_data", "Preparing telemetry probe samples.", step=0, steps=steps, progress=0.05
+        )
         probe_images, probe_targets, sample_source = resource_probe_samples(resource, min(64, batch_size))
+        _finish_stage(
+            run_registry, run_id, "lifecycle", "preparing_data", "Probe samples ready.", stage_started, step=0, steps=steps, progress=0.07
+        )
         _set_training_phase(
             run_store, run_registry, run_id, "initializing", "Initializing optimizer and training hooks.", steps=steps, progress=0.07
         )
+        active_stage = "initializing"
+        stage_started = _start_stage(
+            run_registry, run_id, "lifecycle", "initializing", "Initializing optimizer and training hooks.", step=0, steps=steps, progress=0.07
+        )
         optimizer = resource.build_optimizer(model)
         learning_rate = _optimizer_learning_rate(optimizer, resource.learning_rate)
+        _finish_stage(
+            run_registry, run_id, "lifecycle", "initializing", "Optimizer and hooks ready.", stage_started, step=0, steps=steps, progress=0.08
+        )
 
         model.train()
         save_run_config(
@@ -123,12 +219,59 @@ def run_resource_training_job(
             batch_size=batch_size,
             lr=learning_rate,
         )
+        active_stage = "training"
+        publish_training_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            "training",
+            "active",
+            "Training step loop active.",
+            total_steps=steps,
+            progress=0.08,
+        )
         for step in range(1, steps + 1):
             if training_task_controller.is_cancel_requested(run_id):
                 raise RuntimeError("__cancelled__")
+            data_started = _start_stage(
+                run_registry,
+                run_id,
+                "step",
+                "data",
+                f"Preparing batch for step {step}.",
+                step=step,
+                steps=steps,
+                progress=step / steps,
+            )
             images, labels = resource.train_batch(step, batch_size)
+            _finish_stage(
+                run_registry,
+                run_id,
+                "step",
+                "data",
+                f"Batch ready for step {step}.",
+                data_started,
+                step=step,
+                steps=steps,
+                progress=step / steps,
+            )
             step_start = time.perf_counter()
-            step_result = resource.training_step(model, images, labels, optimizer, step)
+
+            def publish_step_stage(stage: str, state: str, duration_ms: float | None) -> None:
+                publish_training_stage(
+                    run_registry,
+                    run_id,
+                    "step",
+                    stage,
+                    state,
+                    f"{stage.replace('_', ' ').title()} at step {step}.",
+                    step=step,
+                    total_steps=steps,
+                    duration_ms=duration_ms,
+                    progress=step / steps,
+                )
+
+            step_result = resource.training_step(model, images, labels, optimizer, step, publish_step_stage)
             step_time_ms = (time.perf_counter() - step_start) * 1000
             last_step = step
             elapsed_sec = time.perf_counter() - start
@@ -136,6 +279,16 @@ def run_resource_training_job(
             layers = None
             telemetry_metrics = None
             if should_record:
+                evaluation_started = _start_stage(
+                    run_registry,
+                    run_id,
+                    "milestone",
+                    "evaluation",
+                    f"Evaluating telemetry probe at step {step}.",
+                    step=step,
+                    steps=steps,
+                    progress=step / steps,
+                )
                 model.eval()
                 telemetry_images = probe_images if resource.task == "detection" else images
                 telemetry_targets = probe_targets if resource.task == "detection" else labels
@@ -144,6 +297,17 @@ def run_resource_training_job(
                 model.train()
                 layers = telemetry.layers
                 telemetry_metrics = {**telemetry.metrics, **resource_metrics}
+                _finish_stage(
+                    run_registry,
+                    run_id,
+                    "milestone",
+                    "evaluation",
+                    f"Evaluation recorded at step {step}.",
+                    evaluation_started,
+                    step=step,
+                    steps=steps,
+                    progress=step / steps,
+                )
             publish_training_progress(
                 run_registry,
                 run_store,
@@ -165,6 +329,18 @@ def run_resource_training_job(
             raise RuntimeError("__cancelled__")
 
         save_run_config(run_store, run_id, training_status="checkpointing", last_step=last_step)
+        publish_training_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            "training",
+            "completed",
+            "Training step loop completed.",
+            step=last_step,
+            total_steps=steps,
+            duration_ms=(time.perf_counter() - start) * 1000,
+            progress=1.0,
+        )
         publish_run_status(
             run_registry,
             run_id,
@@ -173,6 +349,27 @@ def run_resource_training_job(
             step=last_step,
             total_steps=steps,
             elapsed_sec=time.perf_counter() - start,
+            progress=1.0,
+        )
+        active_stage = "checkpointing"
+        checkpointing_started = _start_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            "checkpointing",
+            "Finalizing run artifacts.",
+            step=last_step,
+            steps=steps,
+            progress=1.0,
+        )
+        checkpoint_started = _start_stage(
+            run_registry,
+            run_id,
+            "milestone",
+            "checkpoint",
+            "Saving final checkpoint and probe samples.",
+            step=last_step,
+            steps=steps,
             progress=1.0,
         )
         sample = io.BytesIO()
@@ -212,6 +409,28 @@ def run_resource_training_job(
         checkpoint_path = run_store.save_checkpoint_bytes(run_id, steps, checkpoint.getvalue(), epoch=1)
         fingerprint = fingerprint_state_dict(model.state_dict())
         run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
+        _finish_stage(
+            run_registry,
+            run_id,
+            "milestone",
+            "checkpoint",
+            "Final checkpoint recorded.",
+            checkpoint_started,
+            step=last_step,
+            steps=steps,
+            progress=1.0,
+        )
+        _finish_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            "checkpointing",
+            "Run artifacts finalized.",
+            checkpointing_started,
+            step=last_step,
+            steps=steps,
+            progress=1.0,
+        )
 
         entry_meta = run_store.load_entry_meta(run_id)
         save_run_config(
@@ -270,6 +489,18 @@ def run_resource_training_job(
             elapsed_sec=time.perf_counter() - start,
             progress=1.0,
         )
+        publish_training_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            "completed",
+            "completed",
+            "Run completed.",
+            step=last_step,
+            total_steps=steps,
+            duration_ms=(time.perf_counter() - start) * 1000,
+            progress=1.0,
+        )
         run_registry.publish(
             run_id,
             [build_run_event(run_id, "run_complete", "training", last_step, {"status": "trained", "run_kind": "resource-training", "inference_only": False})],
@@ -279,6 +510,18 @@ def run_resource_training_job(
         cancelled = str(exc) == "__cancelled__"
         status = "cancelled" if cancelled else "failed"
         message = "Training cancelled." if cancelled else f"Training failed: {exc}"
+        publish_training_stage(
+            run_registry,
+            run_id,
+            "lifecycle",
+            active_stage,
+            "cancelled" if cancelled else "failed",
+            message,
+            step=last_step,
+            total_steps=steps,
+            duration_ms=(time.perf_counter() - start) * 1000,
+            progress=(last_step / steps) if steps else 0.0,
+        )
         save_run_config(
             run_store,
             run_id,

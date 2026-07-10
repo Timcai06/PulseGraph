@@ -4,6 +4,7 @@ import importlib.util
 import inspect
 import math
 import sys
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,7 @@ import torch
 from torch import nn
 
 from app.runtime import mnist_data
-from app.runtime.task_runtime import TaskRuntimeError, TrainingStepResult, resolve_task_runtime
+from app.runtime.task_runtime import TaskRuntimeError, TrainingStageCallback, TrainingStepResult, resolve_task_runtime
 from app.schemas import ModelGraph
 
 
@@ -170,11 +171,17 @@ class LoadedTrainingResource:
         targets: Any,
         optimizer: torch.optim.Optimizer,
         step: int,
+        stage_callback: TrainingStageCallback | None = None,
     ) -> TrainingStepResult:
         hook = getattr(self.module, "training_step", None)
         if not callable(hook):
-            return self.runtime.training_step(model, images, targets, optimizer)
+            return self.runtime.training_step(model, images, targets, optimizer, stage_callback)
+        if stage_callback is not None:
+            stage_callback("custom_step", "active", None)
+        started_at = time.perf_counter()
         result = _call_step_hook(hook, model, images, targets, optimizer, step=step)
+        if stage_callback is not None:
+            stage_callback("custom_step", "completed", (time.perf_counter() - started_at) * 1000)
         return _normalize_training_step_result(result)
 
     def evaluation_metrics(self, model: nn.Module, images: torch.Tensor, targets: Any, step: int) -> dict[str, float]:

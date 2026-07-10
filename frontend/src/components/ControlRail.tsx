@@ -25,6 +25,8 @@ import { NumericField } from "./NumericField";
 gsap.registerPlugin(useGSAP);
 
 type Props = {
+  contextView?: "resource" | "train" | "run";
+  initiallyOpen?: boolean;
   onResourceUpload: (files: NamedSourceFile[]) => void;
   loadedResource?: LoadedResourceSummary;
   onRunTraining: () => void;
@@ -355,6 +357,8 @@ function RunView({
 }
 
 export function ControlRail({
+  contextView,
+  initiallyOpen = true,
   onResourceUpload,
   loadedResource,
   onRunTraining,
@@ -376,7 +380,7 @@ export function ControlRail({
   busy,
   errorMessage
 }: Props) {
-  const [railDrawerOpen, setRailDrawerOpen] = useState(true);
+  const [railDrawerOpen, setRailDrawerOpen] = useState(initiallyOpen);
   const [activeView, setActiveView] = useState<ControlView>("resource");
   const [drawerWidth, setDrawerWidth] = useState(0);
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -397,11 +401,16 @@ export function ControlRail({
   };
 
   useEffect(() => {
+    if (contextView) selectControlView(contextView);
+  }, [contextView]);
+
+  useEffect(() => {
     if (!busy) return;
+    if (contextView) return;
     if (busy === "resource") selectControlView("resource");
     if (busy === "train") selectControlView("train");
     if (busy === "forward") selectControlView("run");
-  }, [busy]);
+  }, [busy, contextView]);
 
   useEffect(() => {
     const drawer = drawerRef.current;
@@ -476,7 +485,7 @@ export function ControlRail({
 
   return (
     <aside className={`left-control-drawer ${railDrawerOpen ? "open" : ""}`} aria-label="control drawer" ref={drawerRef}>
-      <div className="control-rail" id="control-rail-content">
+      <div className={`control-rail ${contextView ? "contextual" : ""}`} id="control-rail-content">
         <header className="control-rail-header">
           <div>
             <span className="control-rail-kicker">Workflow</span>
@@ -485,18 +494,20 @@ export function ControlRail({
           <span className={`control-rail-badge ${busy ? "busy" : loadedResource ? "ready" : "idle"}`}>{busy ? "busy" : activeView}</span>
         </header>
 
-        <nav className="control-tabs" aria-label="Control contexts" onKeyDown={handleTabKeyDown} role="tablist">
-          {controlViews.map((view) => (
-            <ViewTab
-              active={activeView === view.value}
-              count={tabCounts[view.value]}
-              key={view.value}
-              label={view.label}
-              onSelect={selectControlView}
-              value={view.value}
-            />
-          ))}
-        </nav>
+        {!contextView ? (
+          <nav className="control-tabs" aria-label="Control contexts" onKeyDown={handleTabKeyDown} role="tablist">
+            {controlViews.map((view) => (
+              <ViewTab
+                active={activeView === view.value}
+                count={tabCounts[view.value]}
+                key={view.value}
+                label={view.label}
+                onSelect={selectControlView}
+                value={view.value}
+              />
+            ))}
+          </nav>
+        ) : null}
 
         <div className="control-view-frame" ref={viewRef}>
           {activeView === "resource" ? (

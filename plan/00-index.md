@@ -4,21 +4,21 @@ This directory is the working plan surface for PulseGraph product and implementa
 
 ## Current Focus
 
-PulseGraph is validating its general CV runtime against a mainstream detector and real images before adding another task family.
+PulseGraph is restructuring its observability cockpit around task workspaces and a truthful, event-driven Training Loop.
 
 The product direction is:
 
 - keep Ops, telemetry, graph replay, inference output, and reports as the core differentiation;
-- preserve explicit task, dataset, output, metric, and renderer contracts;
-- make resource startup observable and remove duplicate model construction;
-- allow resources to own optimizer, training-step, and evaluation behavior without bypassing telemetry;
-- validate object detection with Faster R-CNN, Penn-Fudan images, and honestly named AP@0.50 metrics;
+- separate Prepare, Train, Evaluate, and Runs without losing the active resource or run;
+- represent lifecycle, repeated train steps, and checkpoint/evaluation milestones at distinct levels;
+- drive the Training Loop from execution events instead of UI inference;
+- keep Ops, telemetry, replay, inference, and reports as coordinated evidence surfaces;
 - stay local and trusted for now, without cloud sandbox complexity;
 - add real datasets only when a specific model/task needs them.
 
 ## Documents
 
-- [07-real-cv-compatibility.md](07-real-cv-compatibility.md): current-stage plan for mainstream real-model compatibility.
+- [08-workspace-training-loop-ux.md](08-workspace-training-loop-ux.md): current-stage plan for task workspaces and event-driven training navigation.
 
 ## Working Rule
 

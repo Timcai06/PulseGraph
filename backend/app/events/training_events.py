@@ -10,6 +10,7 @@ from app.schemas import RunEvent
 
 RunEventType = Literal[
     "run_status",
+    "training_stage",
     "metric",
     "layer_snapshot",
     "infra",
@@ -75,6 +76,34 @@ def publish_run_status(
     if extra:
         payload.update(extra)
     run_registry.publish(run_id, [build_run_event(run_id, "run_status", "training", step, payload)])
+
+
+def publish_training_stage(
+    run_registry: RunRegistry,
+    run_id: str,
+    scope: str,
+    stage: str,
+    state: str,
+    message: str,
+    *,
+    step: int = 0,
+    total_steps: int | None = None,
+    duration_ms: float | None = None,
+    progress: float | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "scope": scope,
+        "stage": stage,
+        "state": state,
+        "message": message,
+    }
+    if total_steps is not None:
+        payload["total_steps"] = total_steps
+    if duration_ms is not None:
+        payload["duration_ms"] = round(max(duration_ms, 0.0), 2)
+    if progress is not None:
+        payload["progress"] = round(min(max(progress, 0.0), 1.0), 4)
+    run_registry.publish(run_id, [build_run_event(run_id, "training_stage", "training", step, payload)])
 
 
 def _numeric_mean(values: list[float]) -> float | None:

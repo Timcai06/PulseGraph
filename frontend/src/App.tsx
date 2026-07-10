@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Zap } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type {
@@ -54,7 +54,7 @@ import {
   layerSnapshotsAtStep,
   resolveTimelineStep
 } from "./lib/timeline";
-import { deriveTrainingLoopStages } from "./lib/trainingLoop";
+import { deriveTrainingLoopModel, type TrainingLoopStage } from "./lib/trainingLoop";
 
 gsap.registerPlugin(useGSAP);
 
@@ -99,6 +99,19 @@ type SourceRecipe = {
 };
 
 type CurrentRunKind = "resource-training" | "source-training" | "recorded-training";
+type Workspace = "prepare" | "train" | "evaluate" | "runs";
+
+const workspaces: Array<{ value: Workspace; label: string }> = [
+  { value: "prepare", label: "Prepare" },
+  { value: "train", label: "Train" },
+  { value: "evaluate", label: "Evaluate" },
+  { value: "runs", label: "Runs" }
+];
+
+function initialWorkspace(): Workspace {
+  const value = window.location.hash.replace(/^#\/?/, "");
+  return workspaces.some((workspace) => workspace.value === value) ? value as Workspace : "prepare";
+}
 
 function preferredResourceEntry(files: NamedSourceFile[]): string | undefined {
   return files.find((file) => file.path === "resource.py" || file.path.endsWith("/resource.py"))?.path ?? files[0]?.path;
@@ -118,7 +131,7 @@ export default function App() {
   const [detailInitialTab, setDetailInitialTab] = useState<"overview" | "source">("overview");
   const [detailOrigin, setDetailOrigin] = useState<DOMRect | undefined>();
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [page, setPage] = useState<"monitor" | "history">("monitor");
+  const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const [historyMode, setHistoryMode] = useState<"completed" | "live">("completed");
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
   const [pendingForwardRun, setPendingForwardRun] = useState<string | undefined>();
@@ -146,6 +159,19 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
+
+  const selectWorkspace = useCallback((nextWorkspace: Workspace) => {
+    setWorkspace(nextWorkspace);
+    const nextHash = `#/${nextWorkspace}`;
+    if (window.location.hash !== nextHash) window.history.replaceState(null, "", nextHash);
+  }, []);
+
+  useEffect(() => {
+    const syncWorkspace = () => setWorkspace(initialWorkspace());
+    window.addEventListener("hashchange", syncWorkspace);
+    if (!window.location.hash) window.history.replaceState(null, "", "#/prepare");
+    return () => window.removeEventListener("hashchange", syncWorkspace);
+  }, []);
 
   useGSAP(
     () => {
@@ -187,7 +213,7 @@ export default function App() {
         gsap.to(dock, { y, duration: motionDuration("drawer", reducedMotion), ease: motionEase.panel });
       }
     },
-    { dependencies: [dockOpen, page, reducedMotion], scope: shellRef }
+    { dependencies: [dockOpen, workspace, reducedMotion], scope: shellRef }
   );
 
   useEffect(() => {
@@ -355,7 +381,7 @@ export default function App() {
       setForwardTarget({ runId: result.run_id });
       setPendingForwardRun(result.run_id);
       setCurrentRunKind("resource-training");
-      setPage("monitor");
+      selectWorkspace("train");
       stream.startStream(result.run_id);
       void refreshRuns();
     } catch (error) {
@@ -405,7 +431,7 @@ export default function App() {
     setErrorMessage(undefined);
     setForwardTarget({ runId });
     setCurrentRunKind("recorded-training");
-    setPage("monitor");
+    selectWorkspace("train");
     setSelectedTimelineStep(undefined);
     setGhostEdges([]);
     setSelectedGhostEdgeId(undefined);
@@ -466,16 +492,18 @@ export default function App() {
       ? `${displayClassName(classificationPrediction.prediction, classificationPrediction.classNames)} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
       : `${predictionKind} · ${sampleSourceLabel[prediction.sample_source]} · ${prediction.weights === "trained" ? "trained" : "random"}`
     : "";
-  const loopStages = useMemo(
+  const trainingLoop = useMemo(
     () =>
-      deriveTrainingLoopStages({
+      deriveTrainingLoopModel({
         hasResource: Boolean(sourceRecipe),
         hasGraph: graph.nodes.length > 0,
         hasPrediction: Boolean(prediction),
         metrics: stream.metrics,
-        events: stream.events
+        events: stream.events,
+        trainingStageEvents: stream.trainingStages,
+        progress: stream.progress
       }),
-    [sourceRecipe, graph.nodes.length, prediction, stream.metrics, stream.events]
+    [sourceRecipe, graph.nodes.length, prediction, stream.metrics, stream.events, stream.trainingStages, stream.progress]
   );
   const selectedLayerHistory = selectedNode ? stream.layerHistory[selectedNode.id] ?? [] : [];
   const timelineFrames = useMemo(
@@ -521,6 +549,61 @@ export default function App() {
     setInspectedNodeId(node.id);
   };
 
+  const handleTrainingStageSelect = (stage: TrainingLoopStage) => {
+    if (stage.evidence === "prepare") {
+      selectWorkspace("prepare");
+      return;
+    }
+    if (stage.evidence === "evaluate") {
+      selectWorkspace("evaluate");
+      return;
+    }
+    if (stage.evidence === "checkpoint") {
+      if (stream.runId) {
+        setDetailInitialTab("overview");
+        setDetailOrigin(undefined);
+        setDetailRunId(stream.runId);
+      }
+      return;
+    }
+    selectWorkspace("train");
+    setDockOpen(stage.evidence === "telemetry" || stage.evidence === "diagnostics");
+  };
+
+  const renderControlRail = (contextView: "resource" | "train" | "run") => (
+    <ControlRail
+      contextView={contextView}
+      initiallyOpen={contextView !== "run"}
+      onResourceUpload={handleResourceUpload}
+      onRunTraining={handleRunTraining}
+      onRunForward={handleRunForward}
+      onReset={handleReset}
+      onWatchRun={handleWatchRun}
+      onOpenDetail={(runId) => {
+        setDetailInitialTab("overview");
+        setDetailOrigin(undefined);
+        setDetailRunId(runId);
+      }}
+      onViewAllRuns={() => {
+        setHistoryMode("live");
+        selectWorkspace("runs");
+      }}
+      trainAvailable={Boolean(sourceRecipe) && !(currentRunKind === "resource-training" && stream.status === "streaming")}
+      loadedResource={sourceRecipe?.summary}
+      trainingSteps={trainingSteps}
+      onTrainingStepsChange={(steps) => setTrainingSteps(Math.max(1, Math.min(500, Math.trunc(steps || 1))))}
+      telemetryStride={telemetryStride}
+      onTelemetryStrideChange={(stride) => setTelemetryStride(Math.max(1, Math.min(500, Math.trunc(stride || 1))))}
+      forwardTargetLabel={forwardTarget ? describeForwardTarget(forwardTarget) : "none"}
+      currentRunKind={currentRunKind}
+      hasPrediction={Boolean(prediction)}
+      liveRuns={runBuckets.active}
+      watchedRunId={stream.runId}
+      busy={busy}
+      errorMessage={errorMessage}
+    />
+  );
+
   return (
     <main className="app-shell" ref={shellRef}>
       <TopStatusBar
@@ -531,25 +614,28 @@ export default function App() {
         theme={theme}
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
       />
-      <nav className="page-tabs" aria-label="PulseGraph views">
-        <button className={page === "monitor" ? "active" : ""} onClick={() => setPage("monitor")} type="button">
-          Monitor
-        </button>
-        <button
-          className={page === "history" ? "active" : ""}
-          onClick={() => {
-            setHistoryMode("completed");
-            setPage("history");
-          }}
-          type="button"
-        >
-          History <span>{runBuckets.history.length}</span>
-        </button>
+      <nav className="page-tabs workspace-tabs" aria-label="PulseGraph workspaces">
+        {workspaces.map((item) => (
+          <button
+            className={workspace === item.value ? "active" : ""}
+            key={item.value}
+            onClick={() => {
+              if (item.value === "runs") setHistoryMode("completed");
+              selectWorkspace(item.value);
+            }}
+            type="button"
+          >
+            {item.label}
+            {item.value === "runs" ? <span>{runBuckets.history.length}</span> : null}
+          </button>
+        ))}
       </nav>
 
-      {page === "monitor" ? (
-        <div className="stage">
-          <TrainingLoopStrip stages={loopStages} />
+      {workspace === "prepare" || workspace === "train" ? (
+        <div className={`stage workspace-stage workspace-${workspace}`}>
+          {workspace === "train" ? (
+            <TrainingLoopStrip model={trainingLoop} onStageSelect={handleTrainingStageSelect} />
+          ) : null}
           <ModelGraphPanel
             graph={graph}
             selectedNodeId={selectedNode?.id}
@@ -578,37 +664,10 @@ export default function App() {
               />
             </div>
           )}
-          <StageStats metrics={stream.metrics} task={metricTask} metricSchema={metricSchema} />
-          <ControlRail
-            onResourceUpload={handleResourceUpload}
-            onRunTraining={handleRunTraining}
-            onRunForward={handleRunForward}
-            onReset={handleReset}
-            onWatchRun={handleWatchRun}
-            onOpenDetail={(runId) => {
-              setDetailInitialTab("overview");
-              setDetailOrigin(undefined);
-              setDetailRunId(runId);
-            }}
-            onViewAllRuns={() => {
-              setHistoryMode("live");
-              setPage("history");
-            }}
-            trainAvailable={Boolean(sourceRecipe) && !(currentRunKind === "resource-training" && stream.status === "streaming")}
-            loadedResource={sourceRecipe?.summary}
-            trainingSteps={trainingSteps}
-            onTrainingStepsChange={(steps) => setTrainingSteps(Math.max(1, Math.min(500, Math.trunc(steps || 1))))}
-            telemetryStride={telemetryStride}
-            onTelemetryStrideChange={(stride) => setTelemetryStride(Math.max(1, Math.min(500, Math.trunc(stride || 1))))}
-            forwardTargetLabel={forwardTarget ? describeForwardTarget(forwardTarget) : "none"}
-            currentRunKind={currentRunKind}
-            hasPrediction={Boolean(prediction)}
-            liveRuns={runBuckets.active}
-            watchedRunId={stream.runId}
-            busy={busy}
-            errorMessage={errorMessage}
-          />
-          <section className={`bottom-dock ${dockOpen ? "open" : ""}`} ref={dockRef}>
+          {workspace === "train" ? <StageStats metrics={stream.metrics} task={metricTask} metricSchema={metricSchema} /> : null}
+          {renderControlRail(workspace === "prepare" ? "resource" : "train")}
+          {workspace === "train" ? (
+          <section className={`bottom-dock train-bottom-dock ${dockOpen ? "open" : ""}`} ref={dockRef}>
             <header className="dock-handle">
               <button className="dock-toggle" type="button" onClick={() => setDockOpen((open) => !open)} aria-expanded={dockOpen}>
                 <i className={`status-dot ${stream.status === "streaming" ? "streaming" : stream.status}`} />
@@ -617,7 +676,7 @@ export default function App() {
                 {dockOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
               </button>
             </header>
-            <div className="dock-panels">
+            <div className="dock-panels train-dock-panels">
               <TelemetryPanel
                 points={stream.metrics}
                 progress={stream.progress}
@@ -640,13 +699,6 @@ export default function App() {
                   onJumpToStep={handleTimelineStepChange}
                 />}
               />
-              <div className="prediction-panel">
-                <div className="panel-heading">
-                  <h2>Inference Output</h2>
-                  <span>{predictionSummary}</span>
-                </div>
-                <InferenceProbe prediction={prediction} theme={theme} />
-              </div>
               <DiagnosticsTray error={errorMessage} events={timelineLive ? stream.events : replayEvents}>
                 {selectedGhostEdge && (
                     <div className={`composer-ghost-card ghost-${selectedGhostEdge.status}`}>
@@ -676,7 +728,44 @@ export default function App() {
               </DiagnosticsTray>
             </div>
           </section>
+          ) : null}
         </div>
+      ) : workspace === "evaluate" ? (
+        <section className="evaluate-workspace">
+          <header className="evaluate-workspace-header">
+            <div>
+              <span>Evaluate</span>
+              <h2>{sourceRecipe?.summary?.name ?? activeRunContract?.task ?? "Active run"}</h2>
+            </div>
+            <div className="evaluate-header-actions">
+              <div className="evaluate-run-context">
+                <span>{stream.runId ?? "No run selected"}</span>
+                <em>{predictionSummary || "No inference result"}</em>
+              </div>
+              <button disabled={!forwardTarget || busy === "forward"} onClick={handleRunForward} type="button">
+                <Zap size={14} /> Run Inference
+              </button>
+            </div>
+          </header>
+          <div className="evaluate-workspace-body">
+            <section className="evaluate-output-surface">
+              <div className="panel-heading">
+                <h2>Inference Output</h2>
+                <span>{predictionSummary}</span>
+              </div>
+              {prediction ? (
+                <InferenceProbe prediction={prediction} theme={theme} />
+              ) : (
+                <div className="evaluate-empty-state">
+                  <span>No inference result</span>
+                  <em>{stream.runId ?? "No active run"}</em>
+                </div>
+              )}
+            </section>
+            <DiagnosticsTray error={errorMessage} events={timelineLive ? stream.events : replayEvents} />
+          </div>
+          {renderControlRail("run")}
+        </section>
       ) : (
         <HistoryPage
           key={historyMode}

@@ -202,6 +202,7 @@ describe("App workspace layout", () => {
     expect(appSource).not.toContain("Compact telemetry");
     expect(appSource).not.toContain("Expanded telemetry");
     expect(apiTypesSource).toContain('type: "run_status"');
+    expect(apiTypesSource).toContain('type: "training_stage"');
     expect(appSource).toContain("progress={stream.progress}");
     expect(chartsSource).toContain("ResizeObserver");
   });
@@ -277,8 +278,12 @@ describe("App workspace layout", () => {
   });
 
   it("keeps the training loop in an integrated top drawer", () => {
-    expect(trainingLoopSource).toContain("deriveTrainingLoopStages");
-    expect(trainingLoopSource).toContain("Data");
+    expect(trainingLoopSource).toContain("deriveTrainingLoopModel");
+    expect(trainingLoopSource).toContain("lifecycleDefinitions");
+    expect(trainingLoopSource).toContain("stepDefinitions");
+    expect(trainingLoopSource).toContain("milestoneDefinitions");
+    expect(trainingLoopSource).toContain('event.type === "training_stage"');
+    expect(trainingLoopSource).toContain("Batch");
     expect(trainingLoopSource).toContain("Forward");
     expect(trainingLoopSource).toContain("Backward");
     expect(trainingLoopStripSource).toContain("gsap");
@@ -295,7 +300,10 @@ describe("App workspace layout", () => {
     expect(trainingLoopStripSource).toContain("aria-expanded");
     expect(trainingLoopStripSource).not.toContain("stage-detail-panel");
     expect(graphStylesSource).not.toContain("display: none;");
-    expect(trainingLoopStripSource).toContain("activeStageId");
+    expect(trainingLoopStripSource).toContain("selectedStageKey");
+    expect(trainingLoopStripSource).toContain("Run Lifecycle");
+    expect(trainingLoopStripSource).toContain("Step Loop");
+    expect(trainingLoopStripSource).toContain("Milestones");
     expect(appSource).toContain("TrainingLoopStrip");
   });
 
@@ -370,9 +378,20 @@ describe("App workspace layout", () => {
   });
 
   it("keeps optimizer telemetry wired through the stream", () => {
-    expect(trainingLoopSource).toContain("latestLearningRate");
-    expect(appSource).toContain("deriveTrainingLoopStages");
+    expect(trainingLoopSource).toContain('id: "optimizer"');
+    expect(trainingLoopSource).toContain("latestMetric?.learningRate");
+    expect(appSource).toContain("deriveTrainingLoopModel");
     expect(appSource).toContain("metrics: stream.metrics");
+  });
+
+  it("separates prepare, train, evaluate, and runs workspaces", () => {
+    expect(appSource).toContain('{ value: "prepare", label: "Prepare" }');
+    expect(appSource).toContain('{ value: "train", label: "Train" }');
+    expect(appSource).toContain('{ value: "evaluate", label: "Evaluate" }');
+    expect(appSource).toContain('{ value: "runs", label: "Runs" }');
+    expect(appSource).toContain('window.history.replaceState(null, "", nextHash)');
+    expect(appSource).toContain('contextView={contextView}');
+    expect(appSource).toContain("evaluate-workspace");
   });
 
   it("turns exposed node handles into intentional Composer ports", () => {

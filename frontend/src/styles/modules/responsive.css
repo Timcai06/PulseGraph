@@ -20,6 +20,10 @@
     grid-template-columns: minmax(270px, 1fr) minmax(280px, 1fr) minmax(180px, 0.64fr);
   }
 
+  .train-dock-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .stage-stats .stat-value {
     font-size: 40px;
   }
@@ -92,6 +96,41 @@
     transform: none !important;
     width: auto;
     height: auto;
+  }
+
+  .evaluate-workspace {
+    position: relative;
+    inset: auto;
+    min-height: calc(100vh - var(--topbar-h) - 16px);
+    margin: 0;
+    border-radius: var(--radius-lg);
+  }
+
+  .evaluate-workspace-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .evaluate-run-context {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .evaluate-header-actions {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .evaluate-output-surface .inference-body {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluate-output-surface .recognition-image {
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    padding-right: 0;
+    padding-bottom: 16px;
   }
 
   .top-bar {
@@ -199,8 +238,30 @@
     grid-template-columns: 1fr;
   }
 
-  .loop-stage-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .lifecycle-stage-row,
+  .step-stage-row {
+    flex-wrap: wrap;
+  }
+
+  .loop-stage-with-link {
+    flex-basis: calc(50% - 6px);
+  }
+
+  .loop-stage-with-link > svg {
+    display: none;
+  }
+
+  .loop-execution-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-evidence-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .stage-evidence-bar > button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .graph-layer-detail-drawer {

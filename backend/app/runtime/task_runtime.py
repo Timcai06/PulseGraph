@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from torch import nn
@@ -20,6 +21,20 @@ from app.runtime.model_loader import forward_with_model
 
 class TaskRuntimeError(ValueError):
     pass
+
+
+TrainingStageCallback = Callable[[str, str, float | None], None]
+
+
+def _stage_started(callback: TrainingStageCallback | None, stage: str) -> float:
+    if callback is not None:
+        callback(stage, "active", None)
+    return time.perf_counter()
+
+
+def _stage_completed(callback: TrainingStageCallback | None, stage: str, started_at: float) -> None:
+    if callback is not None:
+        callback(stage, "completed", (time.perf_counter() - started_at) * 1000)
 
 
 @dataclass(frozen=True)
@@ -85,6 +100,7 @@ class TaskRuntime:
         images: torch.Tensor,
         targets: Any,
         optimizer: torch.optim.Optimizer,
+        stage_callback: TrainingStageCallback | None = None,
     ) -> TrainingStepResult:
         self.ensure_training_supported()
         raise AssertionError("unreachable")
@@ -142,14 +158,23 @@ class ClassificationTaskRuntime(TaskRuntime):
         images: torch.Tensor,
         targets: Any,
         optimizer: torch.optim.Optimizer,
+        stage_callback: TrainingStageCallback | None = None,
     ) -> TrainingStepResult:
         if not isinstance(targets, torch.Tensor):
             raise TaskRuntimeError("Classification training targets must be a Tensor.")
+        started_at = _stage_started(stage_callback, "forward")
         logits = model(images)
+        _stage_completed(stage_callback, "forward", started_at)
+        started_at = _stage_started(stage_callback, "loss")
         loss = torch.nn.functional.cross_entropy(logits, targets)
+        _stage_completed(stage_callback, "loss", started_at)
+        started_at = _stage_started(stage_callback, "backward")
         optimizer.zero_grad()
         loss.backward()
+        _stage_completed(stage_callback, "backward", started_at)
+        started_at = _stage_started(stage_callback, "optimizer")
         optimizer.step()
+        _stage_completed(stage_callback, "optimizer", started_at)
         accuracy = float((logits.argmax(dim=1) == targets).float().mean().item())
         return TrainingStepResult(loss=float(loss.item()), metrics={"accuracy": accuracy})
 
@@ -247,23 +272,32 @@ class DetectionTaskRuntime(TaskRuntime):
         images: torch.Tensor,
         targets: Any,
         optimizer: torch.optim.Optimizer,
+        stage_callback: TrainingStageCallback | None = None,
     ) -> TrainingStepResult:
         self.ensure_training_supported()
         if not isinstance(targets, list):
             raise TaskRuntimeError("Detection training targets must be a list of detection dicts.")
+        started_at = _stage_started(stage_callback, "forward")
         try:
             losses = forward_detection_losses(model, images, targets)
         except DetectionContractError as exc:
             raise TaskRuntimeError(str(exc)) from exc
+        _stage_completed(stage_callback, "forward", started_at)
         if not isinstance(losses, dict) or not losses:
             raise TaskRuntimeError("Detection training forward must return a non-empty loss dict.")
         loss_tensors = {name: value for name, value in losses.items() if isinstance(value, torch.Tensor)}
         if not loss_tensors:
             raise TaskRuntimeError("Detection training loss dict must contain Tensor values.")
+        started_at = _stage_started(stage_callback, "loss")
         loss = sum(loss_tensors.values())
+        _stage_completed(stage_callback, "loss", started_at)
+        started_at = _stage_started(stage_callback, "backward")
         optimizer.zero_grad()
         loss.backward()
+        _stage_completed(stage_callback, "backward", started_at)
+        started_at = _stage_started(stage_callback, "optimizer")
         optimizer.step()
+        _stage_completed(stage_callback, "optimizer", started_at)
         return TrainingStepResult(
             loss=float(loss.detach().item()),
             metrics={name: float(value.detach().item()) for name, value in loss_tensors.items()},

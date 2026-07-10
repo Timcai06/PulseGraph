@@ -30,6 +30,25 @@ function infraEvent(step: number, payload: RunEvent["payload"]): RunEvent {
   } as RunEvent;
 }
 
+function trainingStageEvent(
+  eventId: string,
+  step: number,
+  stage: string,
+  state: "active" | "completed"
+): Extract<RunEvent, { type: "training_stage" }> {
+  return {
+    event_id: eventId,
+    schema_version: "1",
+    ts_ns: 1,
+    source: "training",
+    run_id: "run-1",
+    step,
+    type: "training_stage",
+    layer: null,
+    payload: { scope: "lifecycle", stage, state, message: `${stage} ${state}` }
+  };
+}
+
 describe("applyStreamEvent", () => {
   it("captures arbitrary numeric metric keys while preserving classification shortcuts", () => {
     const next = applyStreamEvent(
@@ -107,6 +126,23 @@ describe("applyStreamEvent", () => {
       etaSec: 29
     });
     expect(next.metrics).toEqual([]);
+  });
+
+  it("preserves the latest state for every training stage outside the bounded event feed", () => {
+    let next = applyStreamEvent(createInitialStreamState(), trainingStageEvent("load-active", 0, "loading", "active"));
+    next = applyStreamEvent(next, trainingStageEvent("load-complete", 0, "loading", "completed"));
+    next = applyStreamEvent(next, trainingStageEvent("train-active", 1, "training", "active"));
+
+    for (let step = 0; step < 70; step += 1) {
+      next = applyStreamEvent(next, metricEvent(step, { loss: 1 / (step + 1) }));
+    }
+
+    expect(next.events).toHaveLength(60);
+    expect(next.trainingStages).toHaveLength(2);
+    expect(next.trainingStages.map((event) => `${event.payload.stage}:${event.payload.state}`)).toEqual([
+      "training:active",
+      "loading:completed"
+    ]);
   });
 
   it("expands one aggregate layer event into sampled node snapshots", () => {

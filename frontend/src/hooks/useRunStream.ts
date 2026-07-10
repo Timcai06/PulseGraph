@@ -39,6 +39,7 @@ type StreamState = {
   runId?: string;
   metrics: MetricPoint[];
   events: RunEvent[];
+  trainingStages: Array<Extract<RunEvent, { type: "training_stage" }>>;
   layerSnapshots: Record<string, LayerSnapshot>;
   layerHistory: Record<string, LayerHistoryPoint[]>;
   graph?: ModelGraph;
@@ -63,6 +64,7 @@ export function createInitialStreamState(): StreamState {
     status: "idle",
     metrics: [],
     events: [],
+    trainingStages: [],
     layerSnapshots: {},
     layerHistory: {},
     device: "unknown"
@@ -92,10 +94,23 @@ function upsertMetric(metrics: MetricPoint[], step: number, patch: MetricPointPa
 }
 
 export function applyStreamEvent(state: StreamState, event: RunEvent): StreamState {
-  if (state.events.some((existing) => existing.event_id === event.event_id)) return state;
+  if (
+    state.events.some((existing) => existing.event_id === event.event_id)
+    || state.trainingStages.some((existing) => existing.event_id === event.event_id)
+  ) return state;
   const next: StreamState = { ...state, events: [event, ...state.events].slice(0, MAX_EVENTS) };
 
   switch (event.type) {
+    case "training_stage": {
+      const key = `${event.payload.scope}:${event.payload.stage}`;
+      next.trainingStages = [
+        event,
+        ...state.trainingStages.filter(
+          (existing) => `${existing.payload.scope}:${existing.payload.stage}` !== key
+        )
+      ];
+      return next;
+    }
     case "metric": {
       const values = numericPayloadValues(event.payload);
       const patch: MetricPointPatch = { values };

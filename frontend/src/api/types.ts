@@ -160,6 +160,16 @@ export type RunStatusPayload = {
   eta_sec?: number | null;
 };
 
+export type TrainingStagePayload = {
+  scope: "lifecycle" | "step" | "milestone" | string;
+  stage: string;
+  state: "pending" | "active" | "completed" | "warning" | "failed" | "cancelled" | string;
+  message: string;
+  total_steps?: number | null;
+  duration_ms?: number | null;
+  progress?: number | null;
+};
+
 type RunEventBase = {
   event_id: string;
   schema_version: string;
@@ -183,6 +193,7 @@ export type RunEvent =
   | (RunEventBase & { type: "config_registered"; payload: Record<string, unknown> })
   | (RunEventBase & { type: "graph_registered"; payload: Record<string, unknown> })
   | (RunEventBase & { type: "run_status"; payload: RunStatusPayload })
+  | (RunEventBase & { type: "training_stage"; payload: TrainingStagePayload })
   | (RunEventBase & { type: "run_complete"; payload: Record<string, unknown> });
 
 export type RunEventType = RunEvent["type"];

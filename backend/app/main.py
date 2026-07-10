@@ -22,7 +22,13 @@ from app.api.routes_runs import create_runs_router
 from app.events.run_registry import RunRegistryFullError, run_registry
 from app.events.run_store import RunStore
 from app.events.training_control import training_task_controller
-from app.events.training_events import aggregate_layer_snapshot, build_run_event as _run_event, publish_run_status, save_run_config
+from app.events.training_events import (
+    aggregate_layer_snapshot,
+    build_run_event as _run_event,
+    publish_run_status,
+    publish_training_stage,
+    save_run_config,
+)
 from app.events.training_stream import demo_training_events, to_sse
 from app.inspector.fingerprint import fingerprint_state_dict
 from app.inspector.fx_tracer import trace_model_graph
@@ -790,6 +796,16 @@ async def train_run_from_resource(
         total_steps=steps,
         progress=0.0,
         extra={"queue_position": state.queue_position},
+    )
+    publish_training_stage(
+        run_registry,
+        run_id,
+        "lifecycle",
+        "queued",
+        "active",
+        "Training queued for execution.",
+        total_steps=steps,
+        progress=0.0,
     )
     background_tasks.add_task(
         run_resource_training_job,

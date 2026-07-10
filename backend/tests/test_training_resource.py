@@ -939,6 +939,25 @@ def test_train_resource_endpoint_publishes_run_status_schema_and_lifecycle() -> 
     assert 0 < first_training.payload["progress"] <= 1
     assert "elapsed_sec" in first_training.payload
     assert "eta_sec" in first_training.payload
+    stage_events = [event for event in events if event.type == "training_stage"]
+    stage_pairs = [(event.payload["scope"], event.payload["stage"], event.payload["state"]) for event in stage_events]
+    assert stage_pairs[:4] == [
+        ("lifecycle", "queued", "active"),
+        ("lifecycle", "queued", "completed"),
+        ("lifecycle", "loading", "active"),
+        ("lifecycle", "loading", "completed"),
+    ]
+    for stage in ("data", "forward", "loss", "backward", "optimizer"):
+        assert ("step", stage, "active") in stage_pairs
+        assert ("step", stage, "completed") in stage_pairs
+    assert ("milestone", "evaluation", "completed") in stage_pairs
+    assert ("milestone", "checkpoint", "completed") in stage_pairs
+    assert ("lifecycle", "completed", "completed") in stage_pairs
+    assert all(
+        isinstance(event.payload.get("duration_ms"), (int, float))
+        for event in stage_events
+        if event.payload["state"] == "completed" and event.payload["stage"] != "queued"
+    )
 
 
 def test_preview_preflight_is_reused_when_starting_the_same_resource() -> None:
@@ -1003,6 +1022,8 @@ def test_invalid_resource_hook_output_becomes_an_actionable_run_failure() -> Non
     detail = client.get(f"/api/runs/{response.json()['run_id']}/detail").json()
     assert detail["config"]["training_status"] == "failed"
     assert "evaluation_metrics(...) metric 'validation_score' must be a scalar number" in detail["config"]["error"]
+    stage_events = [event for event in main_module.run_store.load_events(response.json()["run_id"]) if event.type == "training_stage"]
+    assert any(event.payload["state"] == "failed" for event in stage_events)
 
 
 def test_train_resource_endpoint_aggregates_layer_snapshots_but_preserves_full_details() -> None:
@@ -1110,6 +1131,7 @@ def test_cancel_api_cancels_running_resource_job_end_to_end() -> None:
     assert detail["config"]["training_status"] == "cancelled"
     assert any(event.type == "run_status" and event.payload["phase"] == "cancelling" for event in events)
     assert any(event.type == "run_status" and event.payload["phase"] == "cancelled" for event in events)
+    assert any(event.type == "training_stage" and event.payload["state"] == "cancelled" for event in events)
     assert events[-1].type == "run_complete"
     assert events[-1].payload["status"] == "cancelled"
 

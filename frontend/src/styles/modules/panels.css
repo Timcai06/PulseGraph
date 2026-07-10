@@ -71,6 +71,10 @@
   min-height: 0;
 }
 
+.train-dock-panels {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .prediction-panel {
   border-left: 1px solid rgba(148, 163, 184, 0.1);
 }
