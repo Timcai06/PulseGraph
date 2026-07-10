@@ -334,6 +334,9 @@ describe("App workspace layout", () => {
     expect(timelineSource).toContain("layerSnapshotsAtStep");
     expect(timelineSource).toContain("eventsAtTimelineStep");
     expect(timelineScrubberSource).toContain("timeline-scrubber");
+    expect(timelineScrubberSource).toContain("timeline-summary");
+    expect(timelineScrubberSource).toContain("aria-expanded={open}");
+    expect(timelineScrubberSource).toContain('motionDuration("drawer"');
     expect(timelineScrubberSource).toContain("Telemetry timeline");
     expect(appSource).toContain("selectedTimelineStep");
     expect(appSource).toContain("TimelineScrubber");
