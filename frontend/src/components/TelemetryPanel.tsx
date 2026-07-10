@@ -90,6 +90,9 @@ export function TelemetryPanel({
           <span style={{ transform: `scaleX(${completion / 100})` }} />
         </div>
 
+      </div>
+
+      <div className="telemetry-chart-layout">
         <div className="telemetry-groups" role="tablist" aria-label="Telemetry metric groups">
           {groups.map((item) => (
             <button
@@ -104,18 +107,17 @@ export function TelemetryPanel({
             </button>
           ))}
         </div>
+        <MetricChart
+          group={group}
+          points={points}
+          status={status}
+          theme={theme}
+          runKind={runKind}
+          task={task}
+          metricSchema={metricSchema}
+          selectedStep={selectedStep}
+        />
       </div>
-
-      <MetricChart
-        group={group}
-        points={points}
-        status={status}
-        theme={theme}
-        runKind={runKind}
-        task={task}
-        metricSchema={metricSchema}
-        selectedStep={selectedStep}
-      />
       {timeline}
     </div>
   );

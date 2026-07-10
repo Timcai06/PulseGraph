@@ -18,8 +18,11 @@ function useChart(ref: React.RefObject<HTMLDivElement | null>) {
     const chart = echarts.init(ref.current);
     chartRef.current = chart;
     const onResize = () => chart.resize();
+    const resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(ref.current);
     window.addEventListener("resize", onResize);
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener("resize", onResize);
       chart.dispose();
       chartRef.current = null;
@@ -97,14 +100,14 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
           itemHeight: 6,
           textStyle: { color: palette.text, fontSize: 11 }
         },
-        grid: { left: 42, right: 24, top: 52, bottom: 44, containLabel: true },
+        grid: { left: 42, right: 20, top: 34, bottom: 34, containLabel: true },
         dataZoom: points.length > 30 ? [{ type: "inside", xAxisIndex: 0, start: Math.max(0, 100 - (30 / points.length) * 100), end: 100 }] : [],
         xAxis: {
           type: "category",
           data: points.map((point) => point.step),
           name: "step",
           nameLocation: "middle",
-          nameGap: 28,
+          nameGap: 22,
           axisLabel: { color: palette.text, hideOverlap: true, margin: 10 },
           axisLine: { lineStyle: { color: palette.grid } }
         },

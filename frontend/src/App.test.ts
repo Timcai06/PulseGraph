@@ -190,6 +190,7 @@ describe("App workspace layout", () => {
     expect(telemetryPanelSource).toContain("Optimization");
     expect(telemetryPanelSource).toContain("Quality");
     expect(telemetryPanelSource).toContain("Infra");
+    expect(telemetryPanelSource).toContain("telemetry-chart-layout");
     expect(telemetryPanelSource).toContain("etaSec");
     expect(diagnosticsTraySource).toContain("No warnings or failures");
     expect(diagnosticsTraySource).not.toContain("layer_snapshot");
@@ -199,6 +200,7 @@ describe("App workspace layout", () => {
     expect(appSource).not.toContain("Expanded telemetry");
     expect(apiTypesSource).toContain('type: "run_status"');
     expect(appSource).toContain("progress={stream.progress}");
+    expect(chartsSource).toContain("ResizeObserver");
   });
 
   it("can cancel the active local training run and blocks duplicate starts", () => {

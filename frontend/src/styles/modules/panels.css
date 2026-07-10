@@ -211,22 +211,32 @@
   transition: transform 180ms linear;
 }
 
+.telemetry-chart-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+}
+
 .telemetry-groups {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 5px 10px 3px;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  background: color-mix(in srgb, var(--surface-deep) 82%, var(--surface-raised));
 }
 
 .telemetry-groups button {
-  width: auto;
-  min-height: 26px;
-  padding: 4px 8px;
+  width: 100%;
+  min-height: 30px;
+  justify-content: flex-start;
+  padding: 5px 7px;
   border-color: transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .telemetry-groups button.active {
@@ -652,8 +662,11 @@
 }
 
 .timeline-scrubber {
+  position: relative;
+  isolation: isolate;
   border-top: 1px solid var(--border);
-  background: var(--surface-deep);
+  background: var(--surface-raised);
+  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.14);
 }
 
 .timeline-actions,
@@ -725,6 +738,7 @@
   height: 0;
   overflow: hidden;
   opacity: 0;
+  background: inherit;
 }
 
 .timeline-body {

@@ -98,6 +98,11 @@
   box-shadow: 0 -18px 48px rgba(15, 23, 42, 0.14);
 }
 
+[data-theme="light"] .timeline-scrubber {
+  background: #ffffff;
+  box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
+}
+
 [data-theme="light"] .left-control-drawer {
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
 }
