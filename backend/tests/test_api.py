@@ -1,3 +1,7 @@
+import io
+import zipfile
+
+import pytest
 import torch
 from fastapi.testclient import TestClient
 
@@ -69,6 +73,14 @@ class TinyNet(nn.Module):
 MISSING_IMPORT_RESOURCE = "from datasets.mnist import load_mnist\n"
 
 
+def _zip_bytes(files: list[tuple[str, bytes]]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for path, content in files:
+            archive.writestr(path, content)
+    return buffer.getvalue()
+
+
 def test_resource_preview_returns_graph_without_creating_a_run() -> None:
     response = client.post(
         "/api/inspect/resource/preview",
@@ -127,6 +139,129 @@ def test_resource_preview_resolves_packaged_imports() -> None:
 
     assert response.status_code == 200
     assert response.json()["resource"]["classes"] == 10
+
+
+def test_resource_preview_rejects_zip_path_traversal() -> None:
+    archive = _zip_bytes(
+        [
+            ("resource.py", TINY_RESOURCE.encode()),
+            ("../fixtures/meta.json", b"{}"),
+        ]
+    )
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.zip", archive, "application/zip"))],
+        data={"entry_file": "resource.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "Unsafe upload path" in response.json()["detail"]
+
+
+def test_resource_preview_rejects_duplicate_zip_paths() -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("resource.py", TINY_RESOURCE)
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            archive.writestr("resource.py", TINY_RESOURCE.replace("classes\": 10", "classes\": 3"))
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.zip", buffer.getvalue(), "application/zip"))],
+        data={"entry_file": "resource.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "Duplicate upload path 'resource.py'" in response.json()["detail"]
+
+
+def test_resource_preview_rejects_case_variant_zip_paths() -> None:
+    archive = _zip_bytes(
+        [
+            ("resource.py", TINY_RESOURCE.encode()),
+            ("RESOURCE.py", TINY_RESOURCE.encode()),
+        ]
+    )
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.zip", archive, "application/zip"))],
+        data={"entry_file": "resource.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "Duplicate upload path 'RESOURCE.py'" in response.json()["detail"]
+
+
+def test_resource_preview_rejects_upload_before_full_buffering(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "MAX_SOURCE_UPLOAD_BYTES", 8)
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.py", TINY_RESOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py"},
+    )
+
+    assert response.status_code == 413
+    assert "resource limit" in response.json()["detail"]
+
+
+def test_resource_preview_rejects_zip_member_count_limit(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "MAX_SOURCE_ARCHIVE_MEMBERS", 1)
+    archive = _zip_bytes(
+        [
+            ("resource.py", TINY_RESOURCE.encode()),
+            ("extra.py", TINY_RESOURCE.encode()),
+        ]
+    )
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.zip", archive, "application/zip"))],
+        data={"entry_file": "resource.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "the limit is 1" in response.json()["detail"]
+
+
+def test_resource_preview_rejects_zip_single_file_limit(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "MAX_SOURCE_ARCHIVE_FILE_BYTES", 8)
+    archive = _zip_bytes(
+        [
+            ("resource.py", TINY_RESOURCE.encode()),
+            ("fixtures/meta.json", b'{"label": 1}'),
+        ]
+    )
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.zip", archive, "application/zip"))],
+        data={"entry_file": "resource.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "per-file limit is 8 bytes" in response.json()["detail"]
+
+
+def test_resource_preview_rejects_zip_total_size_limit(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "MAX_SOURCE_ARCHIVE_TOTAL_BYTES", len(TINY_RESOURCE.encode()) + 4)
+    archive = _zip_bytes(
+        [
+            ("resource.py", TINY_RESOURCE.encode()),
+            ("fixtures/meta.json", b'{"label": 1}'),
+        ]
+    )
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.zip", archive, "application/zip"))],
+        data={"entry_file": "resource.zip"},
+    )
+
+    assert response.status_code == 400
+    assert "total limit is" in response.json()["detail"]
 
 
 def test_stream_demo_run_endpoint(monkeypatch) -> None:

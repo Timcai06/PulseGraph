@@ -1,11 +1,17 @@
+import io
 import textwrap
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
+import app.main as main_module
 from app.main import app
+from app.inspector.graph_builder import build_bounded_graph_from_tensor_specs
 from app.resources.contract import load_training_resource
 from app.runtime import mnist_data
+from app.schemas import ModelGraph
 
 
 client = TestClient(app)
@@ -224,6 +230,143 @@ ORDINARY_MODULE_SOURCE = textwrap.dedent(
     """
 )
 
+ASSET_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import json
+    from pathlib import Path
+
+    import torch
+    from torch import nn
+    from torchvision.io import read_image
+
+
+    ROOT = Path(__file__).resolve().parent
+
+
+    def metadata():
+        return {
+            "name": "asset_resource",
+            "classes": 2,
+            "class_names": ["background", "positive"],
+            "input_shape": [3, 2, 2],
+            "batch_size": 2,
+        }
+
+
+    def build_model():
+        return nn.Sequential(nn.Flatten(), nn.Linear(12, 2))
+
+
+    def _sample():
+        image = read_image(str(ROOT / "fixtures" / "pixel.png")).float() / 255.0
+        label = int(json.loads((ROOT / "fixtures" / "meta.json").read_text())["label"])
+        return image, label
+
+
+    def train_batch(step, batch_size):
+        image, label = _sample()
+        images = torch.stack([image for _ in range(batch_size)], dim=0)
+        labels = torch.tensor([label for _ in range(batch_size)], dtype=torch.long)
+        return images, labels
+
+
+    def inference_sample(index):
+        return _sample()
+    """
+)
+
+GRAPH_SPEC_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    def metadata():
+        return {"name": "graph_spec_resource", "classes": 2, "input_shape": [1, 1, 4]}
+
+
+    def build_model():
+        return nn.Sequential(nn.Flatten(), nn.Linear(4, 2))
+
+
+    def train_batch(step, batch_size):
+        images = torch.ones(batch_size, 1, 4)
+        labels = torch.arange(batch_size) % 2
+        return images, labels
+
+
+    def inference_sample(index):
+        return torch.ones(1, 4) * index, index % 2
+
+
+    def graph_spec():
+        return {
+            "nodes": [
+                {"id": "input", "label": "Input", "kind": "Input", "confidence": "trusted", "metadata": {}},
+                {"id": "backbone", "label": "Backbone", "kind": "DetectorBackbone", "confidence": "trusted", "metadata": {"stage": "summary"}},
+                {"id": "head", "label": "Head", "kind": "ClassifierHead", "confidence": "trusted", "metadata": {"stage": "summary"}},
+            ],
+            "edges": [
+                {"id": "input->backbone", "source": "input", "target": "backbone"},
+                {"id": "backbone->head", "source": "backbone", "target": "head"},
+            ],
+        }
+    """
+)
+
+MANY_LAYER_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    class ManyLayerNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.flatten = nn.Flatten()
+            self.layers = nn.ModuleList([nn.Linear(4, 4) for _ in range(32)])
+            self.head = nn.Linear(4, 2)
+
+        def forward(self, images):
+            output = self.flatten(images)
+            for layer in self.layers:
+                output = torch.relu(layer(output))
+            return self.head(output)
+
+
+    def metadata():
+        return {"name": "many_layer_resource", "classes": 2, "input_shape": [1, 1, 4]}
+
+
+    def build_model():
+        return ManyLayerNet()
+
+
+    def train_batch(step, batch_size):
+        images = torch.ones(batch_size, 1, 4)
+        labels = torch.arange(batch_size) % 2
+        return images, labels
+
+
+    def inference_sample(index):
+        return torch.ones(1, 4) * index, index % 2
+    """
+)
+
+
+def _zip_bytes(files: list[tuple[str, bytes]]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for path, content in files:
+            archive.writestr(path, content)
+    return buffer.getvalue()
+
+
+def _tiny_png_bytes() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), (240, 48, 48)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
 
 def test_training_resource_contract_loads_model_batches_and_samples(tmp_path) -> None:
     resource_path = tmp_path / "resource.py"
@@ -411,6 +554,123 @@ def test_train_resource_endpoint_accepts_folder_upload_with_package_imports() ->
     forward = client.get(f"/api/runs/{run_id}/forward?index=2").json()
     assert forward["label"] == 2
     assert forward["class_names"] == ["red", "green", "blue"]
+
+
+def test_train_resource_endpoint_accepts_packaged_binary_assets_and_hides_them_from_source_listing() -> None:
+    archive = _zip_bytes(
+        [
+            ("resource.py", ASSET_RESOURCE_SOURCE.encode()),
+            ("fixtures/meta.json", b'{"label": 1}'),
+            ("fixtures/pixel.png", _tiny_png_bytes()),
+            ("README.md", b"ignored for runtime"),
+        ]
+    )
+
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("asset_resource.zip", archive, "application/zip"))],
+        data={"entry_file": "asset_resource.zip", "steps": "1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    run_id = payload["run_id"]
+    assert payload["entry_file"] == "resource.py"
+    assert sorted(payload["saved"]) == ["fixtures/meta.json", "fixtures/pixel.png", "resource.py"]
+
+    detail = client.get(f"/api/runs/{run_id}/detail").json()
+    assert detail["source_files"] == ["resource.py"]
+
+    forward = client.get(f"/api/runs/{run_id}/forward?index=0").json()
+    assert forward["label"] == 1
+    assert forward["image_shape"] == [3, 2, 2]
+
+
+def test_resource_preview_counts_packaged_assets() -> None:
+    archive = _zip_bytes(
+        [
+            ("resource.py", ASSET_RESOURCE_SOURCE.encode()),
+            ("fixtures/meta.json", b'{"label": 1}'),
+            ("fixtures/pixel.png", _tiny_png_bytes()),
+        ]
+    )
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("asset_resource.zip", archive, "application/zip"))],
+        data={"entry_file": "asset_resource.zip"},
+    )
+
+    assert response.status_code == 200
+    assert sorted(response.json()["files"]) == ["fixtures/meta.json", "fixtures/pixel.png", "resource.py"]
+
+
+def test_resource_preview_uses_graph_spec_when_fx_trace_fails(monkeypatch) -> None:
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("fx detector tracing failed")
+
+    monkeypatch.setattr(main_module, "trace_model_graph", explode)
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.py", GRAPH_SPEC_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["graph_diagnostics"]["strategy"] == "resource_graph_spec"
+    assert payload["graph_diagnostics"]["readability"] == "high"
+    assert "fx trace failed" in payload["graph_diagnostics"]["note"]
+    assert [node["id"] for node in payload["graph"]["nodes"]] == ["input", "backbone", "head"]
+    assert all(node["confidence"] == "inferred" for node in payload["graph"]["nodes"])
+    assert all(node["metadata"]["self_reported"] is True for node in payload["graph"]["nodes"])
+
+
+def test_resource_preview_groups_oversized_fx_graph_when_no_graph_spec(monkeypatch) -> None:
+    huge_graph = ModelGraph.model_validate(
+        {
+            "nodes": [
+                {
+                    "id": f"node_{index}",
+                    "label": f"Node {index}",
+                    "kind": "Linear",
+                    "param_count": 4,
+                    "confidence": "trusted",
+                    "metadata": {},
+                }
+                for index in range(151)
+            ],
+            "edges": [
+                {"id": f"edge_{index}", "source": f"node_{index}", "target": f"node_{index + 1}"}
+                for index in range(150)
+            ],
+        }
+    )
+
+    monkeypatch.setattr(main_module, "trace_model_graph", lambda *_args, **_kwargs: huge_graph)
+
+    response = client.post(
+        "/api/inspect/resource/preview",
+        files=[("files", ("resource.py", MANY_LAYER_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["graph_diagnostics"]["strategy"] == "state_dict_grouped"
+    assert payload["graph_diagnostics"]["node_count"] <= 4
+    assert payload["graph"]["nodes"][1]["kind"] == "ModuleGroup"
+    assert "exceeds the Ops budget" in payload["graph_diagnostics"]["note"]
+
+
+def test_bounded_graph_caps_wide_top_level_modules() -> None:
+    specs = [{"name": f"head{index}.weight", "shape": [4, 4]} for index in range(30)]
+
+    graph = build_bounded_graph_from_tensor_specs(specs, max_nodes=24)
+
+    assert len(graph.nodes) <= 24
+    assert graph.nodes[1].metadata["aggregation_depth"] == 0
 
 
 def test_resource_report_contains_named_rgb_misclassified_samples() -> None:

@@ -50,7 +50,10 @@ describe("App workspace layout", () => {
   it("uses a single training resource workflow instead of source and pt side paths", () => {
     const combined = [appSource, controlRailSource].join("\n");
 
-    expect(combined).toContain("Training Resource");
+    expect(combined).toContain("control-tabs");
+    expect(combined).toContain("Resource");
+    expect(combined).toContain("Train");
+    expect(combined).toContain("Run");
     expect(combined).toContain("Run Training");
     expect(combined).toContain("Run Inference");
     expect(combined).not.toContain("Weights File");
@@ -81,44 +84,38 @@ describe("App workspace layout", () => {
     expect(inferenceProbeSource).toContain("classification-output");
   });
 
-  it("routes detection rendering through overlay semantics in both panels and previews", () => {
+  it("routes detection rendering through the inference overlay", () => {
     expect(inferenceProbeSource).toContain("resolveInferenceRenderer");
     expect(inferenceProbeSource).toContain("detection-output");
     expect(inferenceProbeSource).toContain("detection-results");
-    expect(controlRailSource).toContain("resolveDetectionOverlay");
-    expect(controlRailSource).toContain("rendererHint: outputRendererHint");
-    expect(controlRailSource).toContain("sample.output");
     expect(imagePreviewSource).toContain("DetectionOverlay");
     expect(imagePreviewSource).toContain("image-preview-surface");
     expect(detectionOverlaySource).toContain("tabIndex={0}");
     expect(detectionOverlaySource).toContain("detection-box");
   });
 
-  it("shows resource preview samples and named report mistakes", () => {
+  it("keeps resource import and named report mistakes", () => {
     expect(controlRailSource).toContain("webkitRelativePath");
-    expect(controlRailSource).toContain("Import Folder");
-    expect(controlRailSource).toContain("folder-drop");
+    expect(controlRailSource).toContain("Folder");
+    expect(controlRailSource).toContain("control-mini-action");
     expect(appSource).toContain("preferredResourceEntry");
-    expect(controlRailSource).toContain("resource-samples");
-    expect(controlRailSource).toContain("label_name");
-    expect(controlRailSource).toContain("ImagePreview");
+    expect(controlRailSource).not.toContain("resource-samples");
+    expect(controlRailSource).not.toContain("ImagePreview");
     expect(runDetailPanelSource).toContain("displayClassName");
     expect(runDetailPanelSource).toContain("image_shape");
     expect(runDetailPanelSource).toContain("prediction_name");
   });
 
-  it("carries vision task contract metadata into the resource panel", () => {
+  it("keeps vision task metadata out of the control surface", () => {
     expect(apiTypesSource).toContain("DatasetSpec");
     expect(apiTypesSource).toContain("OutputSchema");
     expect(apiTypesSource).toContain("MetricSchema");
     expect(appSource).toContain("datasetSpec: preview.resource.dataset_spec");
     expect(appSource).toContain("outputSchema: preview.resource.output_schema");
     expect(appSource).toContain("metricSchema: preview.resource.metric_schema");
-    expect(controlRailSource).toContain("resourceContractRows");
-    expect(controlRailSource).toContain("resource-contract-grid");
-    expect(controlRailSource).toContain("datasetSpec");
-    expect(controlRailSource).toContain("outputSchema");
-    expect(controlRailSource).toContain("metricSchema");
+    expect(controlRailSource).not.toContain("resourceContractRows");
+    expect(controlRailSource).not.toContain("resource-contract-grid");
+    expect(controlRailSource).not.toContain("Preview samples");
   });
 
   it("passes task-aware metric context into the generic telemetry views", () => {
@@ -251,6 +248,7 @@ describe("App workspace layout", () => {
     expect(controlRailSource).toContain("drawerRef");
     expect(controlRailSource).toContain("left-control-drawer");
     expect(controlRailSource).toContain("rail-drawer-handle");
+    expect(controlRailSource).toContain("control-disclosure");
     expect(controlRailSource).toContain("motionDuration");
     expect(controlRailSource).toContain("aria-expanded");
     expect(appSource).toContain(".left-control-drawer");

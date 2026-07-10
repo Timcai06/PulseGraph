@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 import uuid
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from torch import nn
 
 from app.runtime import mnist_data
 from app.runtime.task_runtime import TaskRuntimeError, resolve_task_runtime
+from app.schemas import ModelGraph
 
 
 class ResourceContractError(ValueError):
@@ -174,6 +176,36 @@ class LoadedTrainingResource:
             return self.runtime.serialize_sample_output(target, self.class_names)
         except TaskRuntimeError as exc:
             raise ResourceContractError(str(exc)) from exc
+
+    def graph_spec(self, model: nn.Module | None = None) -> ModelGraph | None:
+        graph_spec = getattr(self.module, "graph_spec", None)
+        if not callable(graph_spec):
+            return None
+        try:
+            params = inspect.signature(graph_spec).parameters
+        except (TypeError, ValueError):
+            params = {}
+        try:
+            candidate = graph_spec(model) if params else graph_spec()
+        except TypeError:
+            candidate = graph_spec()
+        try:
+            if isinstance(candidate, ModelGraph):
+                graph = candidate
+            else:
+                graph = ModelGraph.model_validate(candidate)
+            nodes = [
+                node.model_copy(
+                    update={
+                        "confidence": "inferred",
+                        "metadata": {**node.metadata, "graph_source": "resource_graph_spec", "self_reported": True},
+                    }
+                )
+                for node in graph.nodes
+            ]
+            return graph.model_copy(update={"nodes": nodes})
+        except Exception as exc:
+            raise ResourceContractError("graph_spec() must return a ModelGraph-compatible dict.") from exc
 
 
 def _shape_numel(shape: list[int]) -> int:

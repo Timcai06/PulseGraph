@@ -116,6 +116,42 @@
   background: rgba(37, 99, 235, 0.07);
 }
 
+[data-theme="light"] .control-tabs {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="light"] .control-tabs button[aria-selected="true"] {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+[data-theme="light"] .control-card,
+[data-theme="light"] .control-disclosure,
+[data-theme="light"] .control-summary-grid div,
+[data-theme="light"] .control-mini-action {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+[data-theme="light"] .control-upload {
+  color: #1d4ed8;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(239, 246, 255, 0.76));
+}
+
+[data-theme="light"] .control-upload.loaded {
+  color: #0f766e;
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.82), rgba(220, 252, 231, 0.8));
+}
+
+[data-theme="light"] .control-rail-badge.ready,
+[data-theme="light"] .control-card-badge.ready {
+  color: #0f766e;
+}
+
+[data-theme="light"] .number-field input {
+  border-color: rgba(100, 116, 139, 0.24);
+  background: rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+}
+
 [data-theme="light"] .file-drop.loaded {
   color: #0f766e;
   border-color: rgba(13, 148, 136, 0.5);

@@ -100,6 +100,53 @@
 
   .control-rail {
     border-right: 0;
+    padding: 10px;
+  }
+
+  .control-rail-header {
+    flex-direction: column;
+  }
+
+  .control-tabs {
+    gap: 3px;
+    padding: 3px;
+  }
+
+  .control-tabs button {
+    min-height: 38px;
+    padding: 8px 9px;
+  }
+
+  .control-tab-copy span,
+  .control-tab-count {
+    font-size: 9px;
+  }
+
+  .control-tab-count {
+    display: none;
+  }
+
+  .control-card {
+    padding: 10px;
+  }
+
+  .control-card-heading {
+    flex-direction: column;
+  }
+
+  .control-summary-grid,
+  .control-parameter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-inline-actions {
+    align-items: stretch;
+  }
+
+  .control-inline-actions button,
+  .control-mini-action {
+    width: 100%;
+    justify-content: center;
   }
 
   .rail-drawer-handle {

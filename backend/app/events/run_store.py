@@ -99,7 +99,8 @@ class RunStore:
 
     # ---- provenance files ----
 
-    SAFE_SOURCE_PATH = re.compile(r"^[A-Za-z0-9._/-]+\.py$")
+    SAFE_SOURCE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
+    ALLOWED_SOURCE_SUFFIXES = {".py", ".json", ".png", ".jpg", ".jpeg"}
 
     def source_dir(self, run_id: str) -> Path:
         directory = self.run_dir(run_id) / "source"
@@ -118,18 +119,23 @@ class RunStore:
             self._write_entry_meta(run_id, entry_class, "model.py", "recorded")
 
     def save_source_files(
-        self, run_id: str, files: list[tuple[str, str]], entry_file: str, entry_class: str
+        self, run_id: str, files: list[tuple[str, bytes]], entry_file: str, entry_class: str
     ) -> list[str]:
-        """User-attached multi-file source; relative paths are preserved under source/."""
+        """User-attached multi-file source/assets; relative paths are preserved under source/."""
         saved: list[str] = []
         source_dir = self.source_dir(run_id)
         for relative_path, content in files:
             normalized = relative_path.replace("\\", "/").lstrip("/")
-            if ".." in normalized.split("/") or not self.SAFE_SOURCE_PATH.match(normalized):
+            suffix = Path(normalized).suffix.lower()
+            if (
+                ".." in normalized.split("/")
+                or not self.SAFE_SOURCE_PATH.match(normalized)
+                or suffix not in self.ALLOWED_SOURCE_SUFFIXES
+            ):
                 continue
             target = source_dir / normalized
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            target.write_bytes(content)
             saved.append(normalized)
         if entry_file in saved:
             self._write_entry_meta(run_id, entry_class, entry_file, "user-attached")

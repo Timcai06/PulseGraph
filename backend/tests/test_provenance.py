@@ -6,6 +6,7 @@ import torch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.inspector.fingerprint import fingerprint_state_dict
 
 client = TestClient(app)
 
@@ -104,6 +105,18 @@ def test_uploaded_pt_matches_recorded_run_by_fingerprint() -> None:
     assert payload["matched_run_id"] == run_id
     assert payload["weights_fingerprint"]
     assert "full training provenance" in payload["warnings"][0]
+
+
+def test_fingerprint_supports_scalar_integer_buffers() -> None:
+    fingerprint = fingerprint_state_dict(
+        {
+            "weight": torch.ones(2, 2),
+            "num_batches_tracked": torch.tensor(3, dtype=torch.int64),
+        }
+    )
+
+    assert isinstance(fingerprint, str)
+    assert len(fingerprint) == 64
 
 
 def test_forward_replay_rebuilds_model_from_source_and_checkpoint() -> None:

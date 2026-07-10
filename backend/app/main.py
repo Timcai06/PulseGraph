@@ -3,10 +3,12 @@ from __future__ import annotations
 import io
 import tempfile
 import time
+import unicodedata
 import uuid
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -19,7 +21,7 @@ from app.events.run_store import RunStore
 from app.events.training_stream import demo_training_events, to_sse
 from app.inspector.fingerprint import fingerprint_state_dict
 from app.inspector.fx_tracer import trace_model_graph
-from app.inspector.graph_builder import build_graph_from_tensor_specs
+from app.inspector.graph_builder import build_bounded_graph_from_tensor_specs, build_graph_from_tensor_specs
 from app.inspector.pt_inspector import inspect_pt_file
 from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
@@ -30,7 +32,7 @@ from app.reports.analyzer import build_run_report
 from app.reports.markdown import render_run_report_html, render_run_report_markdown
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
 from app.runtime.replay import ReplayError, build_run_detail, run_replay_forward
-from app.schemas import ImageSample, RunDetail, RunEvent
+from app.schemas import ImageSample, ModelGraph, RunDetail, RunEvent
 
 
 app = FastAPI(title="PulseGraph API", version="0.1.0")
@@ -47,6 +49,13 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_ARTIFACT_UPLOAD_BYTES = 50 * 1024 * 1024
 SOURCE_TRAIN_EVENT_INTERVAL_SEC = 0.14
 RESOURCE_PREVIEW_SAMPLE_LIMIT = 12
+MAX_SOURCE_ARCHIVE_MEMBERS = 256
+MAX_SOURCE_ARCHIVE_FILE_BYTES = 4 * 1024 * 1024
+MAX_SOURCE_ARCHIVE_TOTAL_BYTES = 16 * 1024 * 1024
+MAX_SOURCE_UPLOAD_BYTES = 20 * 1024 * 1024
+ALLOWED_SOURCE_SUFFIXES = {".py", ".json", ".png", ".jpg", ".jpeg"}
+GRAPH_NODE_BUDGET = 80
+GROUPED_GRAPH_NODE_BUDGET = 24
 
 app.add_middleware(
     CORSMiddleware,
@@ -134,24 +143,196 @@ async def upload_samples(run_id: str, request: Request):
     return {"run_id": run_id, "path": str(path)}
 
 
-async def _collect_source_files(files: list[UploadFile]) -> list[tuple[str, str]]:
-    """Decode uploaded .py files (expanding .zip archives) into (relative_path, content)."""
-    collected: list[tuple[str, str]] = []
+@dataclass(frozen=True)
+class UploadedSourceFile:
+    path: str
+    data: bytes
+
+    @property
+    def suffix(self) -> str:
+        return Path(self.path).suffix.lower()
+
+    @property
+    def is_python(self) -> bool:
+        return self.suffix == ".py"
+
+    def text(self) -> str:
+        return self.data.decode("utf-8", errors="replace")
+
+
+def _normalize_uploaded_path(path: str) -> str:
+    normalized = path.replace("\\", "/").strip("/")
+    if not normalized or normalized.endswith("/"):
+        raise HTTPException(status_code=400, detail="Uploaded archives cannot contain empty or directory-only paths.")
+    if ".." in normalized.split("/"):
+        raise HTTPException(status_code=400, detail=f"Unsafe upload path '{path}' is not allowed.")
+    return normalized
+
+
+def _upload_path_key(path: str) -> str:
+    return unicodedata.normalize("NFC", path).casefold()
+
+
+def _python_files(collected: list[UploadedSourceFile]) -> list[UploadedSourceFile]:
+    return [item for item in collected if item.is_python]
+
+
+async def _read_upload_limited(upload: UploadFile, limit: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await upload.read(UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload '{upload.filename or 'unnamed'}' exceeds the {limit}-byte resource limit.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _state_dict_specs(model: torch.nn.Module) -> list[dict[str, Any]]:
+    return [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
+
+
+def _graph_readability(node_count: int) -> str:
+    if node_count <= 24:
+        return "high"
+    if node_count <= GRAPH_NODE_BUDGET:
+        return "medium"
+    return "low"
+
+
+def _graph_result_payload(graph: ModelGraph, strategy: str, elapsed_ms: float, note: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "strategy": strategy,
+        "node_count": len(graph.nodes),
+        "edge_count": len(graph.edges),
+        "elapsed_ms": round(elapsed_ms, 2),
+        "readability": _graph_readability(len(graph.nodes)),
+    }
+    if note:
+        payload["note"] = note
+    return payload
+
+
+def _build_resource_graph(resource, model: torch.nn.Module, example_input: torch.Tensor) -> tuple[ModelGraph, dict[str, Any]]:
+    start = time.perf_counter()
+    try:
+        traced = trace_model_graph(model, example_input)
+        if len(traced.nodes) <= GRAPH_NODE_BUDGET:
+            return traced, _graph_result_payload(traced, "fx", (time.perf_counter() - start) * 1000.0)
+        oversized_note = (
+            f"torch.fx produced {len(traced.nodes)} nodes, which exceeds the Ops budget of {GRAPH_NODE_BUDGET}."
+        )
+    except Exception as exc:
+        traced = None
+        oversized_note = f"torch.fx trace failed: {exc}"
+
+    graph_spec = resource.graph_spec(model)
+    if graph_spec is not None:
+        return graph_spec, _graph_result_payload(
+            graph_spec,
+            "resource_graph_spec",
+            (time.perf_counter() - start) * 1000.0,
+            note=oversized_note,
+        )
+
+    grouped = build_bounded_graph_from_tensor_specs(_state_dict_specs(model), max_nodes=GROUPED_GRAPH_NODE_BUDGET)
+    return grouped, _graph_result_payload(
+        grouped,
+        "state_dict_grouped",
+        (time.perf_counter() - start) * 1000.0,
+        note=oversized_note,
+    )
+
+
+async def _collect_source_files(files: list[UploadFile]) -> list[UploadedSourceFile]:
+    """Decode uploaded source/assets, expanding .zip archives into safe in-memory files."""
+    collected: list[UploadedSourceFile] = []
+    seen_paths: set[str] = set()
+    accepted_bytes = 0
+    accepted_files = 0
     for upload in files:
         name = (upload.filename or "").replace("\\", "/")
-        data = await upload.read()
+        data = await _read_upload_limited(upload, MAX_SOURCE_UPLOAD_BYTES)
         if name.lower().endswith(".zip"):
             try:
                 with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                    for member in archive.namelist():
-                        normalized = member.replace("\\", "/")
-                        if not normalized.lower().endswith(".py") or ".." in normalized.split("/"):
+                    members = [member for member in archive.infolist() if not member.is_dir()]
+                    if len(members) > MAX_SOURCE_ARCHIVE_MEMBERS:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Archive '{name}' has {len(members)} files; "
+                                f"the limit is {MAX_SOURCE_ARCHIVE_MEMBERS}."
+                            ),
+                        )
+                    accepted_files += len(members)
+                    if accepted_files > MAX_SOURCE_ARCHIVE_MEMBERS:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"The upload exceeds the {MAX_SOURCE_ARCHIVE_MEMBERS}-file limit.",
+                        )
+                    total_bytes = 0
+                    for member in members:
+                        normalized = _normalize_uploaded_path(member.filename)
+                        collision_key = _upload_path_key(normalized)
+                        if collision_key in seen_paths:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Duplicate upload path '{normalized}' is not allowed.",
+                            )
+                        if member.file_size > MAX_SOURCE_ARCHIVE_FILE_BYTES:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    f"Archive member '{normalized}' expands to {member.file_size} bytes; "
+                                    f"the per-file limit is {MAX_SOURCE_ARCHIVE_FILE_BYTES} bytes."
+                                ),
+                            )
+                        total_bytes += member.file_size
+                        accepted_bytes += member.file_size
+                        if total_bytes > MAX_SOURCE_ARCHIVE_TOTAL_BYTES:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    f"Archive '{name}' expands to {total_bytes} bytes; "
+                                    f"the total limit is {MAX_SOURCE_ARCHIVE_TOTAL_BYTES} bytes."
+                                ),
+                            )
+                        if accepted_bytes > MAX_SOURCE_ARCHIVE_TOTAL_BYTES:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"The upload exceeds the {MAX_SOURCE_ARCHIVE_TOTAL_BYTES}-byte total resource limit.",
+                            )
+                        if Path(normalized).suffix.lower() not in ALLOWED_SOURCE_SUFFIXES:
                             continue
-                        collected.append((normalized, archive.read(member).decode("utf-8", errors="replace")))
+                        seen_paths.add(collision_key)
+                        collected.append(UploadedSourceFile(path=normalized, data=archive.read(member)))
             except zipfile.BadZipFile:
                 continue
-        elif name.lower().endswith(".py"):
-            collected.append((name, data.decode("utf-8", errors="replace")))
+        elif Path(name).suffix.lower() in ALLOWED_SOURCE_SUFFIXES:
+            normalized = _normalize_uploaded_path(name)
+            collision_key = _upload_path_key(normalized)
+            if collision_key in seen_paths:
+                raise HTTPException(status_code=400, detail=f"Duplicate upload path '{normalized}' is not allowed.")
+            accepted_files += 1
+            accepted_bytes += len(data)
+            if accepted_files > MAX_SOURCE_ARCHIVE_MEMBERS:
+                raise HTTPException(status_code=400, detail=f"The upload exceeds the {MAX_SOURCE_ARCHIVE_MEMBERS}-file limit.")
+            if len(data) > MAX_SOURCE_ARCHIVE_FILE_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Upload '{normalized}' exceeds the {MAX_SOURCE_ARCHIVE_FILE_BYTES}-byte per-file limit.",
+                )
+            if accepted_bytes > MAX_SOURCE_ARCHIVE_TOTAL_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"The upload exceeds the {MAX_SOURCE_ARCHIVE_TOTAL_BYTES}-byte total resource limit.",
+                )
+            seen_paths.add(collision_key)
+            collected.append(UploadedSourceFile(path=normalized, data=data))
     return collected
 
 
@@ -645,12 +826,13 @@ async def train_run_from_resource(
     telemetry_stride: int = Form(1),
 ):
     collected = await _collect_source_files(files)
-    if not collected:
+    python_files = _python_files(collected)
+    if not python_files:
         raise HTTPException(status_code=400, detail="No Python resource files were found in the upload.")
 
     run_id = f"resource-{uuid.uuid4().hex[:12]}"
-    normalized_entry = _resolve_entry_file(entry_file, collected)
-    saved = run_store.save_source_files(run_id, collected, normalized_entry, "TrainingResource")
+    normalized_entry = _resolve_entry_file(entry_file, python_files)
+    saved = run_store.save_source_files(run_id, [(item.path, item.data) for item in collected], normalized_entry, "TrainingResource")
     if normalized_entry not in saved:
         raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
 
@@ -663,19 +845,13 @@ async def train_run_from_resource(
         resource.ensure_training_supported()
         model = resource.build_model()
         example_input = _as_model_input(resource.inference_sample(0)[0])
+        graph, graph_diagnostics = _build_resource_graph(resource, model, example_input)
     except ResourceContractError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except TaskRuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
-
-    try:
-        graph = trace_model_graph(model, example_input)
-    except Exception:
-        graph = build_graph_from_tensor_specs(
-            [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
-        )
 
     steps = max(1, min(int(steps), 500))
     telemetry_stride = max(1, min(int(telemetry_stride), steps))
@@ -719,6 +895,7 @@ async def train_run_from_resource(
         "entry_file": normalized_entry,
         "entry_class": "TrainingResource",
         "graph": graph.model_dump(),
+        "graph_diagnostics": graph_diagnostics,
         "checkpoint": None,
     }
 
@@ -726,15 +903,19 @@ async def train_run_from_resource(
 @app.post("/api/inspect/source/candidates")
 async def analyze_source_candidates(files: list[UploadFile] = File(...)):
     collected = await _collect_source_files(files)
-    if not collected:
+    python_files = _python_files(collected)
+    if not python_files:
         raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
-    return {"files": [path for path, _ in collected], "candidates": find_module_classes(dict(collected))}
+    return {
+        "files": [item.path for item in python_files],
+        "candidates": find_module_classes({item.path: item.text() for item in python_files}),
+    }
 
 
-def _resolve_entry_file(requested: str, collected: list[tuple[str, str]]) -> str:
+def _resolve_entry_file(requested: str, collected: list[UploadedSourceFile]) -> str:
     """Map the requested entry to a collected file. A .zip upload names the
     archive rather than a file inside it, so fall back to conventional roots."""
-    names = [path for path, _ in collected]
+    names = [item.path for item in collected]
     normalized = requested.replace("\\", "/")
     if normalized in names:
         return normalized
@@ -763,38 +944,35 @@ async def preview_training_resource(files: list[UploadFile] = File(...), entry_f
     """Load and fx-trace an uploaded training resource without creating a run,
     so the UI can show the operator graph immediately on import."""
     collected = await _collect_source_files(files)
-    if not collected:
+    python_files = _python_files(collected)
+    if not python_files:
         raise HTTPException(status_code=400, detail="No Python resource files were found in the upload.")
-    normalized_entry = _resolve_entry_file(entry_file, collected)
+    normalized_entry = _resolve_entry_file(entry_file, python_files)
 
     with tempfile.TemporaryDirectory(prefix="pulsegraph-preview-") as tmp:
         root = Path(tmp)
-        for rel_path, content in collected:
-            target = root / rel_path
+        for uploaded in collected:
+            target = root / uploaded.path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            target.write_bytes(uploaded.data)
         try:
             resource = load_training_resource(root / normalized_entry, source_root=root)
             model = resource.build_model()
             example_input = _as_model_input(resource.inference_sample(0)[0])
             samples = _resource_preview_samples(resource)
+            graph, graph_diagnostics = _build_resource_graph(resource, model, example_input)
         except ResourceContractError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Failed to load the training resource: {exc}") from exc
-        try:
-            graph = trace_model_graph(model, example_input)
-        except Exception:
-            graph = build_graph_from_tensor_specs(
-                [{"name": name, "shape": list(tensor.shape)} for name, tensor in sorted(model.state_dict().items())]
-            )
 
     return {
         "resource": _resource_info(resource),
         "samples": [sample.model_dump() for sample in samples],
-        "files": [path for path, _ in collected],
+        "files": [item.path for item in collected],
         "entry_file": normalized_entry,
         "graph": graph.model_dump(),
+        "graph_diagnostics": graph_diagnostics,
     }
 
 
@@ -811,12 +989,13 @@ async def import_run_from_source(
     a checkpoint so the existing replay, stream, and report surfaces all work.
     """
     collected = await _collect_source_files(files)
-    if not collected:
+    python_files = _python_files(collected)
+    if not python_files:
         raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
 
     run_id = f"source-{uuid.uuid4().hex[:12]}"
-    normalized_entry = entry_file.replace("\\", "/")
-    saved = run_store.save_source_files(run_id, collected, normalized_entry, entry_class)
+    normalized_entry = _resolve_entry_file(entry_file, python_files)
+    saved = run_store.save_source_files(run_id, [(item.path, item.data) for item in collected], normalized_entry, entry_class)
     if normalized_entry not in saved:
         raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
 
@@ -902,12 +1081,13 @@ async def train_run_from_source(
     steps: int = Form(8),
 ):
     collected = await _collect_source_files(files)
-    if not collected:
+    python_files = _python_files(collected)
+    if not python_files:
         raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
 
     run_id = f"train-{uuid.uuid4().hex[:12]}"
-    normalized_entry = entry_file.replace("\\", "/")
-    saved = run_store.save_source_files(run_id, collected, normalized_entry, entry_class)
+    normalized_entry = _resolve_entry_file(entry_file, python_files)
+    saved = run_store.save_source_files(run_id, [(item.path, item.data) for item in collected], normalized_entry, entry_class)
     if normalized_entry not in saved:
         raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
 
@@ -996,10 +1176,12 @@ async def attach_run_source(
     entry_class: str = Form(...),
 ):
     collected = await _collect_source_files(files)
-    if not collected:
+    python_files = _python_files(collected)
+    if not python_files:
         raise HTTPException(status_code=400, detail="No Python source files were found in the upload.")
-    saved = run_store.save_source_files(run_id, collected, entry_file.replace("\\", "/"), entry_class)
-    if entry_file not in saved:
+    normalized_entry = _resolve_entry_file(entry_file, python_files)
+    saved = run_store.save_source_files(run_id, [(item.path, item.data) for item in collected], normalized_entry, entry_class)
+    if normalized_entry not in saved:
         raise HTTPException(status_code=400, detail=f"Entry file '{entry_file}' was not part of the accepted upload.")
 
     validation = None
@@ -1010,7 +1192,13 @@ async def attach_run_source(
             validation = validate_source_against_checkpoint(
                 source_path, entry_class, checkpoint_path, source_root=run_store.run_dir(run_id) / "source"
             ).as_dict()
-    return {"run_id": run_id, "saved": saved, "entry_file": entry_file, "entry_class": entry_class, "validation": validation}
+    return {
+        "run_id": run_id,
+        "saved": saved,
+        "entry_file": normalized_entry,
+        "entry_class": entry_class,
+        "validation": validation,
+    }
 
 
 @app.get("/api/runs/{run_id}/detail")
