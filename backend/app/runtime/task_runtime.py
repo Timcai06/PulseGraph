@@ -6,6 +6,15 @@ from typing import Any
 import torch
 from torch import nn
 
+from app.runtime.detection import (
+    DetectionContractError,
+    forward_detection,
+    forward_detection_losses,
+    mean_detection_iou,
+    normalize_detection_batch,
+    serialize_detection,
+)
+from app.runtime.inference_output import classification_output
 from app.runtime.model_loader import forward_with_model
 
 
@@ -17,6 +26,21 @@ class TaskRuntimeError(ValueError):
 class TrainingStepResult:
     loss: float
     metrics: dict[str, float]
+
+
+@dataclass(frozen=True)
+class TelemetrySnapshot:
+    layers: list[dict[str, Any]]
+    metrics: dict[str, float]
+
+
+@dataclass(frozen=True)
+class InferenceResult:
+    output: dict[str, Any]
+    layers: list[dict[str, Any]]
+    label: int | None = None
+    prediction: int | None = None
+    probabilities: list[float] | None = None
 
 
 class TaskRuntime:
@@ -65,8 +89,20 @@ class TaskRuntime:
         self.ensure_training_supported()
         raise AssertionError("unreachable")
 
-    def capture_layers(self, model: nn.Module, images: torch.Tensor) -> list[dict[str, Any]]:
-        return forward_with_model(model, images)["layers"]
+    def telemetry_snapshot(self, model: nn.Module, images: torch.Tensor, targets: Any) -> TelemetrySnapshot:
+        return TelemetrySnapshot(layers=forward_with_model(model, images[:1])["layers"], metrics={})
+
+    def inference(
+        self,
+        model: nn.Module,
+        image: torch.Tensor,
+        target: Any,
+        class_names: list[str] | None,
+    ) -> InferenceResult:
+        raise NotImplementedError
+
+    def pack_probe_targets(self, targets: list[Any]) -> Any:
+        return targets
 
 
 class ClassificationTaskRuntime(TaskRuntime):
@@ -117,53 +153,57 @@ class ClassificationTaskRuntime(TaskRuntime):
         accuracy = float((logits.argmax(dim=1) == targets).float().mean().item())
         return TrainingStepResult(loss=float(loss.item()), metrics={"accuracy": accuracy})
 
+    def inference(
+        self,
+        model: nn.Module,
+        image: torch.Tensor,
+        target: Any,
+        class_names: list[str] | None,
+    ) -> InferenceResult:
+        result = forward_with_model(model, image)
+        prediction = int(result["prediction"])
+        label = self.normalize_sample_target(target) if target is not None else prediction
+        probabilities = list(result["probabilities"])
+        return InferenceResult(
+            output=classification_output(
+                label=label,
+                prediction=prediction,
+                probabilities=probabilities,
+                class_names=class_names,
+            ),
+            layers=result["layers"],
+            label=label,
+            prediction=prediction,
+            probabilities=probabilities,
+        )
 
-def _as_detection_item(value: Any, context: str) -> dict[str, Any]:
-    if isinstance(value, (list, tuple)):
-        if not value:
-            raise TaskRuntimeError(f"{context} must contain at least one detection item.")
-        value = value[0]
-    if not isinstance(value, dict):
-        raise TaskRuntimeError(f"{context} must be a detection dict or a list of detection dicts.")
-    if "boxes" not in value or "labels" not in value:
-        raise TaskRuntimeError(f"{context} must contain 'boxes' and 'labels'.")
-    return value
-
-
-def _as_list(value: Any, field: str) -> list[Any]:
-    if isinstance(value, torch.Tensor):
-        return value.detach().cpu().tolist()
-    if isinstance(value, (list, tuple)):
-        return list(value)
-    raise TaskRuntimeError(f"Detection '{field}' must be a Tensor or list.")
+    def pack_probe_targets(self, targets: list[Any]) -> torch.Tensor:
+        return torch.tensor([self.normalize_sample_target(target) for target in targets], dtype=torch.long)
 
 
 def _serialize_detection(value: Any, class_names: list[str] | None, context: str) -> dict[str, Any]:
-    item = _as_detection_item(value, context)
-    boxes = _as_list(item["boxes"], "boxes")
-    labels = [int(label) for label in _as_list(item["labels"], "labels")]
-    scores = [float(score) for score in _as_list(item["scores"], "scores")] if "scores" in item else []
-    if any(not isinstance(box, list) or len(box) != 4 for box in boxes):
-        raise TaskRuntimeError("Detection 'boxes' must have shape [N, 4] in xyxy format.")
-    if len(boxes) != len(labels):
-        raise TaskRuntimeError("Detection 'boxes' and 'labels' must have the same length.")
-    if scores and len(scores) != len(boxes):
-        raise TaskRuntimeError("Detection 'scores' must match the number of boxes.")
-    label_names = [
-        class_names[label] if class_names is not None and 0 <= label < len(class_names) else str(label)
-        for label in labels
-    ]
-    return {
-        "kind": "detection",
-        "boxes": [[float(coordinate) for coordinate in box] for box in boxes],
-        "labels": labels,
-        "scores": scores,
-        "label_names": label_names,
-    }
+    try:
+        detection = normalize_detection_batch(value, 1, context)[0]
+    except DetectionContractError as exc:
+        raise TaskRuntimeError(str(exc)) from exc
+    return serialize_detection(detection, class_names)
+
+
+def _cpu_safe(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, dict):
+        return {key: _cpu_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_cpu_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_cpu_safe(item) for item in value)
+    return value
 
 
 class DetectionTaskRuntime(TaskRuntime):
     task = "detection"
+    trainable = True
 
     def validate_resource_metadata(self, metadata: dict[str, Any]) -> None:
         super().validate_resource_metadata(metadata)
@@ -175,22 +215,13 @@ class DetectionTaskRuntime(TaskRuntime):
         metadata["classes"] = int(metadata["classes"])
 
     def validate_model(self, model: nn.Module, sample: torch.Tensor, metadata: dict[str, Any]) -> None:
-        unbatched = sample[0] if sample.dim() == 4 and sample.shape[0] == 1 else sample
         model.eval()
+        model_input = sample if sample.dim() == 4 else sample.unsqueeze(0)
         try:
-            with torch.no_grad():
-                output = model([unbatched])
-        except Exception as list_exc:
-            model_input = sample.unsqueeze(0) if sample.dim() == 3 else sample
-            try:
-                with torch.no_grad():
-                    output = model(model_input)
-            except Exception as tensor_exc:
-                raise TaskRuntimeError(
-                    "Detection model must accept a torchvision-style image list or a batched image Tensor. "
-                    f"List input failed: {list_exc}; Tensor input failed: {tensor_exc}"
-                ) from tensor_exc
-        _serialize_detection(output, None, "Detection model output")
+            output, _ = forward_detection(model, model_input)
+            normalize_detection_batch(output, int(model_input.shape[0]), "Detection model output")
+        except DetectionContractError as exc:
+            raise TaskRuntimeError(str(exc)) from exc
 
     def normalize_sample_target(self, target: Any) -> dict[str, Any]:
         _serialize_detection(target, None, "Detection inference_sample() target")
@@ -198,6 +229,77 @@ class DetectionTaskRuntime(TaskRuntime):
 
     def serialize_sample_output(self, target: Any, class_names: list[str] | None) -> dict[str, Any]:
         return _serialize_detection(target, class_names, "Detection inference_sample() target")
+
+    def normalize_training_batch(self, images: Any, targets: Any) -> tuple[torch.Tensor, list[dict[str, Any]]]:
+        if not isinstance(images, torch.Tensor):
+            raise TaskRuntimeError("Detection train_batch() images must be a Tensor.")
+        if not isinstance(targets, (list, tuple)) or len(targets) != int(images.shape[0]):
+            raise TaskRuntimeError("Detection train_batch() targets must be one detection dict per image.")
+        normalized: list[dict[str, Any]] = []
+        for target in targets:
+            _serialize_detection(target, None, "Detection train_batch() target")
+            normalized.append(target)
+        return images.float(), normalized
+
+    def training_step(
+        self,
+        model: nn.Module,
+        images: torch.Tensor,
+        targets: Any,
+        optimizer: torch.optim.Optimizer,
+    ) -> TrainingStepResult:
+        self.ensure_training_supported()
+        if not isinstance(targets, list):
+            raise TaskRuntimeError("Detection training targets must be a list of detection dicts.")
+        try:
+            losses = forward_detection_losses(model, images, targets)
+        except DetectionContractError as exc:
+            raise TaskRuntimeError(str(exc)) from exc
+        if not isinstance(losses, dict) or not losses:
+            raise TaskRuntimeError("Detection training forward must return a non-empty loss dict.")
+        loss_tensors = {name: value for name, value in losses.items() if isinstance(value, torch.Tensor)}
+        if not loss_tensors:
+            raise TaskRuntimeError("Detection training loss dict must contain Tensor values.")
+        loss = sum(loss_tensors.values())
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        return TrainingStepResult(
+            loss=float(loss.detach().item()),
+            metrics={name: float(value.detach().item()) for name, value in loss_tensors.items()},
+        )
+
+    def telemetry_snapshot(self, model: nn.Module, images: torch.Tensor, targets: Any) -> TelemetrySnapshot:
+        try:
+            output, layers = forward_detection(model, images, capture_layers=True)
+            mean_iou = mean_detection_iou(output, targets, expected_size=int(images.shape[0]))
+        except DetectionContractError as exc:
+            raise TaskRuntimeError(str(exc)) from exc
+        return TelemetrySnapshot(
+            layers=layers,
+            metrics={"mean_iou": mean_iou},
+        )
+
+    def inference(
+        self,
+        model: nn.Module,
+        image: torch.Tensor,
+        target: Any,
+        class_names: list[str] | None,
+    ) -> InferenceResult:
+        model_input = image if image.dim() == 4 else image.unsqueeze(0)
+        try:
+            output, layers = forward_detection(model, model_input, capture_layers=True)
+        except DetectionContractError as exc:
+            raise TaskRuntimeError(str(exc)) from exc
+        return InferenceResult(
+            output=_serialize_detection(output, class_names, "Detection model output"),
+            layers=layers,
+            probabilities=[],
+        )
+
+    def pack_probe_targets(self, targets: list[Any]) -> list[Any]:
+        return [_cpu_safe(self.normalize_sample_target(target)) for target in targets]
 
 
 _RUNTIMES: dict[str, TaskRuntime] = {

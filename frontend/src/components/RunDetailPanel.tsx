@@ -13,7 +13,7 @@ import {
   runReportMarkdownUrl
 } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
-import { displayClassName } from "../lib/inferenceView";
+import { displayClassName, normalizeImageShape, type DetectionView } from "../lib/inferenceView";
 import { motionDuration, motionDurations, motionEase } from "../lib/motion";
 import { ImagePreview } from "./ImagePreview";
 import { SourceAttach } from "./SourceAttach";
@@ -33,6 +33,134 @@ type Props = {
 
 function severityClass(severity: string) {
   return severity === "critical" ? "critical" : severity === "warning" ? "warning" : "info";
+}
+
+type SummaryCard = {
+  key: string;
+  label: string;
+  value: string;
+};
+
+type DetectionEvidenceSample = NonNullable<NonNullable<RunReport["detection_analysis"]>["evidence"]>[number];
+
+function formatMetricValue(value: number | string | null | undefined, unit?: string | null) {
+  if (value == null) return "–";
+  const rendered = typeof value === "number" ? (Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")) : value;
+  return unit ? `${rendered} ${unit}` : rendered;
+}
+
+function formatBox(box: number[]) {
+  return box.map((value) => value.toFixed(2).replace(/\.00$/, "")).join(", ");
+}
+
+function detectionLabel(label: number, labelName?: string | null) {
+  return labelName || String(label);
+}
+
+function evidenceDetection(sample: DetectionEvidenceSample): DetectionView {
+  const totalCount = sample.predicted_total ?? sample.predicted.length;
+  return {
+    boxes: sample.predicted.flatMap((box, index) =>
+      box.box.length === 4
+        ? [{
+            index,
+            label: box.label,
+            labelName: detectionLabel(box.label, box.label_name),
+            score: box.score ?? undefined,
+            coordinates: [box.box[0], box.box[1], box.box[2], box.box[3]] as [number, number, number, number]
+          }]
+        : []
+    ),
+    totalCount,
+    truncated: sample.predicted_truncated === true || totalCount > sample.predicted.length
+  };
+}
+
+function DetectionEvidenceCard({ sample }: { sample: DetectionEvidenceSample }) {
+  const shape = normalizeImageShape(sample.image_shape, sample.image_pixels.length);
+  const imageLabel = shape ? `${shape[2]}×${shape[1]}` : "image";
+  const detection = evidenceDetection(sample);
+
+  return (
+    <article className="detection-evidence-card">
+      <div className="detection-evidence-header">
+        <strong>sample {sample.sample_index}</strong>
+        <span>mean IoU {formatMetricValue(sample.mean_iou)}</span>
+      </div>
+      <div className="detection-evidence-body">
+        <div className="detection-evidence-preview">
+          <ImagePreview
+            pixels={sample.image_pixels}
+            imageShape={sample.image_shape}
+            size="normal"
+            detection={detection}
+            overlayLabel={`Checkpoint detections for sample ${sample.sample_index}`}
+          />
+          <span className="detection-evidence-shape">{imageLabel}</span>
+        </div>
+        <div className="detection-evidence-columns">
+          <div>
+            <h4>
+              Predicted
+              {sample.predicted_truncated ? ` ${sample.predicted.length}/${sample.predicted_total}` : ""}
+            </h4>
+            {sample.predicted.length > 0 ? (
+              <table className="report-table detection-box-table">
+                <thead>
+                  <tr>
+                    <th>label</th>
+                    <th>score</th>
+                    <th>IoU</th>
+                    <th>box</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sample.predicted.map((box, index) => (
+                    <tr key={`${sample.sample_index}-pred-${index}`}>
+                      <td>{detectionLabel(box.label, box.label_name)}</td>
+                      <td>{formatMetricValue(box.score)}</td>
+                      <td>{formatMetricValue(box.matched_iou)}</td>
+                      <td>{formatBox(box.box)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="empty-hint">No predicted boxes.</p>
+            )}
+          </div>
+          <div>
+            <h4>
+              Target
+              {sample.target_truncated ? ` ${sample.target.length}/${sample.target_total}` : ""}
+            </h4>
+            {sample.target.length > 0 ? (
+              <table className="report-table detection-box-table">
+                <thead>
+                  <tr>
+                    <th>label</th>
+                    <th>IoU</th>
+                    <th>box</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sample.target.map((box, index) => (
+                    <tr key={`${sample.sample_index}-target-${index}`}>
+                      <td>{detectionLabel(box.label, box.label_name)}</td>
+                      <td>{formatMetricValue(box.matched_iou)}</td>
+                      <td>{formatBox(box.box)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="empty-hint">No target boxes.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose, onPrediction }: Props) {
@@ -171,6 +299,28 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
       (sample) => sample.label === selectedConfusion.label && sample.prediction === selectedConfusion.prediction
     );
   }, [report, selectedConfusion]);
+  const reportTask = report?.task ?? String(detail?.config?.task ?? "classification");
+  const summaryCards = useMemo<SummaryCard[]>(() => {
+    if (!report) return [];
+    const cards: SummaryCard[] = [{ key: "task", label: "task", value: reportTask }];
+    const seen = new Set(cards.map((card) => card.key));
+    const addCard = (key: string, label: string, value: number | string | null | undefined, unit?: string | null) => {
+      if (value == null || seen.has(key)) return;
+      cards.push({ key, label, value: formatMetricValue(value, unit) });
+      seen.add(key);
+    };
+
+    report.task_metrics.forEach((metric) => addCard(metric.key, metric.label, metric.value, metric.unit));
+    addCard("final_loss", "final loss", report.final_loss);
+    if (reportTask === "classification") {
+      addCard("best_accuracy", "best accuracy", report.best_accuracy);
+      addCard("overfit_gap", "overfit gap", report.overfit_gap);
+    }
+    addCard("loss_plateau_step", "plateau step", report.loss_plateau_step);
+    return cards;
+  }, [report, reportTask]);
+  const hasClassificationAnalysis = Boolean(report?.error_analysis && report.error_analysis.labels.length > 0);
+  const hasDetectionEvidence = Boolean(report?.detection_analysis && (report.detection_analysis.evidence.length > 0 || report.detection_analysis.evaluated_samples > 0));
 
   return (
     <div className="detail-overlay" role="dialog" aria-label={`Run ${runId} detail`} ref={overlayRef}>
@@ -310,9 +460,18 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                     <a href="#report-summary">Summary</a>
                     <a href="#report-insights">Insights</a>
                     <a href="#report-layer-health">Layer Health</a>
-                    <a href="#report-checkpoints">Checkpoints</a>
-                    <a href="#report-error-analysis">Error Analysis</a>
+                    {report.checkpoint_evaluations.length > 0 && <a href="#report-checkpoints">Checkpoints</a>}
+                    {hasClassificationAnalysis && <a href="#report-error-analysis">Error Analysis</a>}
+                    {hasDetectionEvidence && <a href="#report-detection-evidence">Detection Evidence</a>}
                   </nav>
+                  <section className="report-stats" id="report-summary">
+                    {summaryCards.map((card) => (
+                      <div key={card.key}>
+                        <span>{card.label}</span>
+                        <strong>{card.value}</strong>
+                      </div>
+                    ))}
+                  </section>
                   <section id="report-insights">
                     <h3>Insights</h3>
                     {report.insights.map((insight) => (
@@ -322,24 +481,6 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                         {insight.suggestion && <p className="suggestion">→ {insight.suggestion}</p>}
                       </div>
                     ))}
-                  </section>
-                  <section className="report-stats" id="report-summary">
-                    <div>
-                      <span>final loss</span>
-                      <strong>{report.final_loss ?? "–"}</strong>
-                    </div>
-                    <div>
-                      <span>best accuracy</span>
-                      <strong>{report.best_accuracy ?? "–"}</strong>
-                    </div>
-                    <div>
-                      <span>overfit gap</span>
-                      <strong>{report.overfit_gap ?? "–"}</strong>
-                    </div>
-                    <div>
-                      <span>plateau step</span>
-                      <strong>{report.loss_plateau_step ?? "–"}</strong>
-                    </div>
                   </section>
                   {report.layer_health.length > 0 && (
                     <section id="report-layer-health">
@@ -454,6 +595,20 @@ export function RunDetailPanel({ runId, initialTab = "overview", origin, onClose
                           ))}
                         </div>
                       )}
+                    </section>
+                  )}
+                  {report.detection_analysis && hasDetectionEvidence && (
+                    <section id="report-detection-evidence">
+                      <h3>Detection evidence</h3>
+                      <div className="detection-evidence-meta">
+                        <span>mean IoU {formatMetricValue(report.detection_analysis.mean_iou)}</span>
+                        <span>{report.detection_analysis.evaluated_samples} evaluated samples</span>
+                      </div>
+                      <div className="detection-evidence-grid">
+                        {report.detection_analysis.evidence.map((sample) => (
+                          <DetectionEvidenceCard key={sample.sample_index} sample={sample} />
+                        ))}
+                      </div>
                     </section>
                   )}
                 </>

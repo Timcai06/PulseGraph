@@ -74,6 +74,8 @@ export type InferenceOutput = ClassificationOutput | StructuredInferenceOutput;
 export type PredictionResponse = {
   task?: string | null;
   output?: InferenceOutput | null;
+  output_schema?: OutputSchema | null;
+  metric_schema?: MetricSchema | null;
   sample_index: number;
   label?: number | null;
   prediction?: number | null;
@@ -98,7 +100,9 @@ export type ImageSample = {
   image_pixels: number[];
 };
 
-export type MetricPayload = {
+export type MetricPayloadValue = number | string | null | undefined;
+
+export type MetricPayload = Record<string, MetricPayloadValue> & {
   loss?: number | null;
   accuracy?: number | null;
   learning_rate?: number | null;
@@ -230,6 +234,40 @@ export type ErrorAnalysis = {
   }[];
 };
 
+export type TaskMetricSummary = {
+  key: string;
+  label: string;
+  value?: number | string | null;
+  unit?: string | null;
+};
+
+export type DetectionBoxEvidence = {
+  box: number[];
+  label: number;
+  label_name?: string | null;
+  score?: number | null;
+  matched_iou?: number | null;
+};
+
+export type DetectionSampleEvidence = {
+  sample_index: number;
+  image_shape: number[];
+  image_pixels: number[];
+  mean_iou?: number | null;
+  predicted: DetectionBoxEvidence[];
+  target: DetectionBoxEvidence[];
+  predicted_total?: number;
+  target_total?: number;
+  predicted_truncated?: boolean;
+  target_truncated?: boolean;
+};
+
+export type DetectionAnalysis = {
+  mean_iou?: number | null;
+  evaluated_samples: number;
+  evidence: DetectionSampleEvidence[];
+};
+
 export type SourceCandidate = {
   class_name: string;
   file: string;
@@ -333,13 +371,16 @@ export type ResourcePreview = {
 
 export type RunReport = {
   run_id: string;
+  task: string;
   generated_for_checkpoint?: number | null;
   final_loss?: number | null;
   best_accuracy?: number | null;
   overfit_gap?: number | null;
   loss_plateau_step?: number | null;
+  task_metrics: TaskMetricSummary[];
   layer_health: LayerHealth[];
   checkpoint_evaluations: CheckpointEvaluation[];
   error_analysis?: ErrorAnalysis | null;
+  detection_analysis?: DetectionAnalysis | null;
   insights: RunInsight[];
 };

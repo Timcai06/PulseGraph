@@ -21,4 +21,15 @@ describe("theme token usage", () => {
     expect(timeline).not.toContain("rgba(2, 6, 23");
     expect(timeline).not.toContain("rgba(34, 211, 238");
   });
+
+  it("keeps inference source badges readable in both themes", async () => {
+    const panels = await cssModule("panels.css");
+    const synthetic = rule(panels, ".source-synthetic,\n.source-probe");
+    const mnist = rule(panels, ".source-mnist");
+
+    expect(synthetic).toContain("var(--amber)");
+    expect(synthetic).toContain("var(--surface)");
+    expect(mnist).toContain("var(--green)");
+    expect(mnist).toContain("var(--surface)");
+  });
 });

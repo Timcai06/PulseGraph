@@ -4,6 +4,8 @@ import { chartPalette, withAlpha, type Theme } from "../lib/chartTheme";
 import { chartProbabilityRows } from "../lib/inferenceView";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import type { MetricPoint, StreamStatus } from "../hooks/useRunStream";
+import type { MetricSchema } from "../api/types";
+import { deriveMetricSeries, metricValue } from "../lib/metricSeries";
 
 export type { MetricPoint };
 
@@ -31,12 +33,14 @@ type MetricsProps = {
   status?: StreamStatus;
   theme?: Theme;
   runKind?: string;
+  task?: string;
+  metricSchema?: MetricSchema | null;
   selectedStep?: number;
 };
 
 function emptyMetricMessage(status: StreamStatus, runKind?: string) {
   if (runKind === "source-import") {
-    return "This run is an inference replay. Use Run Training to create loss, accuracy, and infra telemetry.";
+    return "This run is an inference replay. Use Run Training to create task metrics and infra telemetry.";
   }
   if (status === "streaming") {
     return "Waiting for training metrics from the current run.";
@@ -44,7 +48,7 @@ function emptyMetricMessage(status: StreamStatus, runKind?: string) {
   return "Run training or watch a recorded training run to populate telemetry.";
 }
 
-export function MetricChart({ points, status = "idle", theme = "dark", runKind, selectedStep }: MetricsProps) {
+export function MetricChart({ points, status = "idle", theme = "dark", runKind, task, metricSchema, selectedStep }: MetricsProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useChart(ref);
   const reducedMotion = useReducedMotion();
@@ -53,12 +57,20 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
     const chart = chartRef.current;
     if (!chart) return;
     const palette = chartPalette();
+    const seriesSpecs = deriveMetricSeries(points, { task, metricSchema });
     const area = (color: string) => ({
       color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
         { offset: 0, color: withAlpha(color, 0.22) },
         { offset: 1, color: withAlpha(color, 0) }
       ])
     });
+    const toneColor = {
+      amber: palette.amber,
+      green: palette.green,
+      cyan: palette.cyan,
+      violet: palette.violet,
+      red: palette.red
+    } as const;
     chart.setOption(
       {
         backgroundColor: "transparent",
@@ -91,33 +103,19 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
           { type: "value", axisLabel: { color: palette.text }, splitLine: { show: false } }
         ],
         series: [
-          {
-            name: "loss",
-            type: "line",
-            smooth: true,
-            showSymbol: false,
-            data: points.map((point) => point.loss ?? null),
-            color: palette.amber,
-            areaStyle: area(palette.amber)
-          },
-          {
-            name: "accuracy",
-            type: "line",
-            smooth: true,
-            showSymbol: false,
-            yAxisIndex: 1,
-            data: points.map((point) => point.accuracy ?? null),
-            color: palette.green,
-            areaStyle: area(palette.green)
-          },
-          {
-            name: "step ms",
-            type: "line",
-            smooth: true,
-            showSymbol: false,
-            data: points.map((point) => point.stepTimeMs ?? null),
-            color: palette.cyan
-          },
+          ...seriesSpecs.map((spec) => {
+            const color = toneColor[spec.tone];
+            return {
+              name: spec.label,
+              type: "line",
+              smooth: true,
+              showSymbol: false,
+              yAxisIndex: spec.yAxisIndex ?? 0,
+              data: points.map((point) => metricValue(point, spec.key) ?? null),
+              color,
+              areaStyle: spec.area ? area(color) : undefined
+            };
+          }),
           {
             name: "selected step",
             type: "line",
@@ -134,7 +132,7 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
       },
       { notMerge: true }
     );
-  }, [chartRef, points, reducedMotion, selectedStep, theme]);
+  }, [chartRef, metricSchema, points, reducedMotion, selectedStep, task, theme]);
 
   return (
     <div className="chart-wrap">

@@ -17,6 +17,7 @@ import { useGSAP } from "@gsap/react";
 import type { NamedSourceFile, RunSummary } from "../api/client";
 import type { LoadedResourceSummary } from "../App";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { inferenceSampleCaption, resolveDetectionOverlay } from "../lib/inferenceView";
 import { motionDuration, motionEase } from "../lib/motion";
 import { ImagePreview } from "./ImagePreview";
 
@@ -123,6 +124,7 @@ export function ControlRail({
   }, []);
 
   const contractRows = resourceContractRows(loadedResource);
+  const outputRendererHint = textValue(loadedResource?.outputSchema?.renderer) ?? textValue(loadedResource?.outputSchema?.kind);
 
   useGSAP(
     () => {
@@ -218,12 +220,32 @@ export function ControlRail({
               ) : null}
               {loadedResource.samples?.length ? (
                 <div className="resource-samples" aria-label="resource preview samples">
-                  {loadedResource.samples.slice(0, 8).map((sample) => (
-                    <figure key={sample.index}>
-                      <ImagePreview pixels={sample.image_pixels} imageShape={sample.image_shape} size="mini" />
-                      <figcaption>{sample.label_name ?? sample.label}</figcaption>
-                    </figure>
-                  ))}
+                  {loadedResource.samples.slice(0, 8).map((sample) => {
+                    const detection = resolveDetectionOverlay(sample.output, {
+                      task: sample.task,
+                      rendererHint: outputRendererHint
+                    });
+                    const caption = inferenceSampleCaption({
+                      output: sample.output,
+                      task: sample.task,
+                      rendererHint: outputRendererHint,
+                      label: sample.label,
+                      labelName: sample.label_name
+                    });
+
+                    return (
+                      <figure key={sample.index}>
+                        <ImagePreview
+                          pixels={sample.image_pixels}
+                          imageShape={sample.image_shape}
+                          size="mini"
+                          detection={detection}
+                          overlayLabel={`Resource sample ${sample.index} detections`}
+                        />
+                        <figcaption>{caption}</figcaption>
+                      </figure>
+                    );
+                  })}
                 </div>
               ) : null}
             </>

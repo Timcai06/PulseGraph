@@ -3,16 +3,21 @@
     --rail-w: 236px;
   }
 
+  .page-tabs {
+    left: 46%;
+  }
+
+  .status-strip {
+    gap: 4px;
+  }
+
   .status-strip span {
-    padding: 5px 9px;
+    padding: 5px 7px;
+    font-size: 11px;
   }
 
   .dock-panels {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .event-panel {
-    display: none;
+    grid-template-columns: minmax(270px, 1fr) minmax(280px, 1fr) minmax(180px, 0.64fr);
   }
 
   .stage-stats .stat-value {
@@ -80,6 +85,7 @@
   }
 
   .graph-stage {
+    position: relative;
     min-height: 480px;
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-xl);
@@ -120,6 +126,10 @@
 
   .stage-toolbar {
     right: 10px;
+  }
+
+  .topology-summary {
+    display: none;
   }
 
   .bottom-dock {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appSource from "./App.tsx?raw";
 import controlRailSource from "./components/ControlRail.tsx?raw";
+import detectionOverlaySource from "./components/DetectionOverlay.tsx?raw";
 import imagePreviewSource from "./components/ImagePreview.tsx?raw";
 import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
@@ -80,6 +81,19 @@ describe("App workspace layout", () => {
     expect(inferenceProbeSource).toContain("classification-output");
   });
 
+  it("routes detection rendering through overlay semantics in both panels and previews", () => {
+    expect(inferenceProbeSource).toContain("resolveInferenceRenderer");
+    expect(inferenceProbeSource).toContain("detection-output");
+    expect(inferenceProbeSource).toContain("detection-results");
+    expect(controlRailSource).toContain("resolveDetectionOverlay");
+    expect(controlRailSource).toContain("rendererHint: outputRendererHint");
+    expect(controlRailSource).toContain("sample.output");
+    expect(imagePreviewSource).toContain("DetectionOverlay");
+    expect(imagePreviewSource).toContain("image-preview-surface");
+    expect(detectionOverlaySource).toContain("tabIndex={0}");
+    expect(detectionOverlaySource).toContain("detection-box");
+  });
+
   it("shows resource preview samples and named report mistakes", () => {
     expect(controlRailSource).toContain("webkitRelativePath");
     expect(controlRailSource).toContain("Import Folder");
@@ -107,6 +121,16 @@ describe("App workspace layout", () => {
     expect(controlRailSource).toContain("metricSchema");
   });
 
+  it("passes task-aware metric context into the generic telemetry views", () => {
+    expect(appSource).toContain("getRunDetail(stream.runId)");
+    expect(appSource).toContain("runContractFromConfig(detail.config)");
+    expect(appSource).toContain("const metricTask = activeRunContract?.task ?? prediction?.task ?? sourceRecipe?.summary?.task");
+    expect(appSource).toContain("activeRunContract?.metricSchema ?? prediction?.metric_schema");
+    expect(appSource).toContain("<StageStats metrics={stream.metrics} task={metricTask} metricSchema={metricSchema} />");
+    expect(appSource).toContain("task={metricTask}");
+    expect(appSource).toContain("metricSchema={metricSchema}");
+  });
+
   it("can export and copy a shareable run report", () => {
     expect(apiHttpSource).toContain("downloadRunReportMarkdown");
     expect(apiHttpSource).toContain("/report/export.md");
@@ -118,6 +142,12 @@ describe("App workspace layout", () => {
     expect(runDetailPanelSource).toContain("window.open");
     expect(runDetailPanelSource).toContain("Copy link");
     expect(runDetailPanelSource).toContain("navigator.clipboard.writeText");
+  });
+
+  it("renders detection report evidence with the shared image overlay", () => {
+    expect(runDetailPanelSource).toContain("evidenceDetection(sample)");
+    expect(runDetailPanelSource).toContain("Checkpoint detections for sample");
+    expect(runDetailPanelSource).toContain("report.detection_analysis.evidence");
   });
 
   it("makes training steps configurable from the main workflow", () => {

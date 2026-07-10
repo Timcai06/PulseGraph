@@ -2,8 +2,10 @@ import { useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type { MetricPoint } from "../hooks/useRunStream";
+import type { MetricSchema } from "../api/types";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { motionDuration, motionEase } from "../lib/motion";
+import { derivePrimaryMetricSignal, latestMetricValue } from "../lib/metricSeries";
 
 gsap.registerPlugin(useGSAP);
 
@@ -36,20 +38,20 @@ function useCountUp(value: number | undefined, format: (current: number) => stri
 
 type Props = {
   metrics: MetricPoint[];
+  task?: string;
+  metricSchema?: MetricSchema | null;
 };
 
-export function StageStats({ metrics }: Props) {
-  let loss: number | undefined;
-  let accuracy: number | undefined;
-  for (let index = metrics.length - 1; index >= 0; index -= 1) {
-    if (loss === undefined && metrics[index].loss != null) loss = metrics[index].loss;
-    if (accuracy === undefined && metrics[index].accuracy != null) accuracy = metrics[index].accuracy;
-    if (loss !== undefined && accuracy !== undefined) break;
-  }
+export function StageStats({ metrics, task, metricSchema }: Props) {
+  const loss = latestMetricValue(metrics, "loss");
+  const primarySignal = derivePrimaryMetricSignal(metrics, { task, metricSchema });
+  const primaryValue = primarySignal ? latestMetricValue(metrics, primarySignal.key) : undefined;
   const step = metrics.length ? metrics[metrics.length - 1].step : undefined;
 
   const lossRef = useCountUp(loss, (current) => current.toFixed(4));
-  const accuracyRef = useCountUp(accuracy, (current) => `${(current * 100).toFixed(1)}%`);
+  const primaryRef = useCountUp(primaryValue, (current) =>
+    primarySignal?.format === "percent" ? `${(current * 100).toFixed(1)}%` : current.toFixed(4)
+  );
   const stepRef = useCountUp(step, (current) => String(Math.round(current)));
 
   if (!metrics.length) return null;
@@ -60,7 +62,7 @@ export function StageStats({ metrics }: Props) {
       <strong className="stat-value" ref={lossRef}>–</strong>
       <div className="stat-row">
         <span>
-          acc <b ref={accuracyRef}>–</b>
+          {primarySignal?.label ?? "signal"} <b ref={primaryRef}>–</b>
         </span>
         <span>
           step <b ref={stepRef}>–</b>

@@ -1,9 +1,11 @@
 import type { PredictionResponse } from "../api/client";
 import {
-  classificationOutputFromPrediction,
+  describeDetectionSummary,
   displayClassName,
+  formatConfidencePercent,
+  formatDetectionCoordinates,
   inferenceOutputKind,
-  structuredOutputRows,
+  resolveInferenceRenderer,
   topProbabilityRows
 } from "../lib/inferenceView";
 import { ProbabilityChart } from "./Charts";
@@ -22,14 +24,16 @@ function sourceBadge(source?: PredictionResponse["sample_source"]) {
 }
 
 export function InferenceProbe({ prediction, theme = "dark" }: Props) {
-  const classification = classificationOutputFromPrediction(prediction);
+  const renderer = resolveInferenceRenderer(prediction, prediction?.output_schema?.renderer);
+  const classification = renderer?.renderer === "classification" ? renderer.classification : undefined;
+  const detection = renderer?.renderer === "detection" ? renderer.detection : undefined;
   const probabilities = classification?.probabilities ?? [];
   const classNames = classification?.classNames;
   const top = topProbabilityRows(probabilities, classNames);
   const confidence = classification?.confidence ?? top[0]?.value ?? 0;
   const predictionLabel = classification ? displayClassName(classification.prediction, classNames) : "";
-  const outputKind = prediction ? inferenceOutputKind(prediction) : "classification";
-  const structuredRows = prediction && !classification ? structuredOutputRows(prediction.output) : [];
+  const outputKind = renderer?.kind ?? (prediction ? inferenceOutputKind(prediction) : "classification");
+  const structuredRows = renderer?.renderer === "structured" ? renderer.rows : [];
   const legacyLabel = typeof prediction?.label === "number" ? prediction.label : undefined;
   const legacyPrediction = typeof prediction?.prediction === "number" ? prediction.prediction : undefined;
 
@@ -37,7 +41,12 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
     <div className="inference-body">
       <div className="inference-image recognition-image">
         <span>Input</span>
-        <ImagePreview pixels={prediction?.image_pixels} imageShape={prediction?.image_shape} />
+        <ImagePreview
+          pixels={prediction?.image_pixels}
+          imageShape={prediction?.image_shape}
+          detection={detection}
+          overlayLabel={detection ? "Inference detections" : undefined}
+        />
       </div>
       <div className="inference-result">
         {prediction && classification ? (
@@ -56,6 +65,35 @@ export function InferenceProbe({ prediction, theme = "dark" }: Props) {
                   {item.label}: {(item.value * 100).toFixed(1)}%
                 </span>
               ))}
+            </div>
+          </>
+        ) : prediction && detection ? (
+          <>
+            <div className="detection-output recognition-callout">
+              <span>{outputKind}</span>
+              <strong>{detection.totalCount}</strong>
+              <em>{describeDetectionSummary(detection)}</em>
+            </div>
+            <span className={`source-badge source-${prediction.sample_source}`}>
+              {sourceBadge(prediction.sample_source)}
+            </span>
+            <div className="detection-results" role="list" aria-label="Detection results">
+              {detection.boxes.length ? (
+                detection.boxes.map((box) => (
+                  <div className="detection-row" key={`${box.index}-${box.label}-${box.coordinates.join("-")}`} role="listitem">
+                    <div className="detection-copy">
+                      <strong>{box.labelName}</strong>
+                      <span>{formatDetectionCoordinates(box.coordinates)}</span>
+                    </div>
+                    <span className="detection-score">{box.score === undefined ? "score n/a" : formatConfidencePercent(box.score)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-hint">No detections</p>
+              )}
+              {detection.truncated ? (
+                <p className="detection-truncated">Showing {detection.boxes.length} of {detection.totalCount} detections.</p>
+              ) : null}
             </div>
           </>
         ) : prediction ? (

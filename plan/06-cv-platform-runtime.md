@@ -48,14 +48,6 @@ The next architecture should separate five contracts:
 
 Classification should become one implementation of this pattern, not the platform default that every task must imitate.
 
-## Current Gaps
-
-- Detection resources can import and preview, but their training runtime is not implemented yet.
-- Classification owns the current `CrossEntropyLoss` training implementation; detection has no optimizer path yet.
-- Replay always converts model output into classification output.
-- The frontend has a structured fallback, but no real detection renderer yet.
-- Reports and metrics are still accuracy-centric.
-
 ## Stage Tasks
 
 ### Task 1: Make Prediction Output Task-Neutral
@@ -69,46 +61,46 @@ Classification should become one implementation of this pattern, not the platfor
 
 - [x] Replace hard-coded classification branches with a task runtime dispatcher.
 - [x] Keep `classification` as the first runtime implementation.
-- [x] Add a `detection` runtime stub that can validate resource metadata and render sample outputs without full training optimization yet.
+- [x] Add a trainable `detection` runtime that validates resource metadata and preserves structured outputs.
 - [x] Make unsupported tasks fail with a clear platform-capability error.
 
 ### Task 3: Add Synthetic Detection Resource
 
-- [ ] Create a tiny local detection resource with generated images, boxes, labels, and a simple model.
-- [ ] Use synthetic data first to avoid dataset download friction.
-- [ ] Ensure preview samples show visible object boxes and label names.
-- [ ] Keep the resource small enough for fast local verification.
+- [x] Create a tiny local detection resource with generated images, boxes, labels, and a simple model.
+- [x] Use synthetic data first to avoid dataset download friction.
+- [x] Ensure preview samples show visible object boxes and label names.
+- [x] Keep the resource small enough for fast local verification.
 
 ### Task 4: Build Detection Inference Renderer
 
-- [ ] Add an image overlay renderer for boxes, scores, and labels.
-- [ ] Keep the existing classification probability card unchanged.
-- [ ] Add renderer registry logic keyed by `output.kind` or `output_schema.renderer`.
-- [ ] Verify dark and light themes visually.
+- [x] Add an image overlay renderer for boxes, scores, and labels.
+- [x] Keep the existing classification probability card unchanged.
+- [x] Add renderer registry logic keyed by `output.kind` or `output_schema.renderer`.
+- [x] Verify dark and light themes visually.
 
 ### Task 5: Extend Metrics And Reports
 
-- [ ] Add task-specific metric grouping so detection can show loss components and IoU-style signals.
-- [ ] Keep generic metric charts for unknown metric names.
-- [ ] Add report sections that can summarize structured outputs and visual evidence.
-- [ ] Avoid claiming mAP until the evaluator is real.
+- [x] Add task-specific metric grouping so detection can show loss components and IoU-style signals.
+- [x] Keep generic metric charts for unknown metric names.
+- [x] Add report sections that can summarize structured outputs and visual evidence.
+- [x] Avoid claiming mAP until the evaluator is real.
 
 ### Task 6: Preserve Ops Observability
 
-- [ ] Ensure graph, layer health, training loop stages, timeline scrubber, and runtime events still work for classification.
-- [ ] Ensure detection runs still publish graph, infra, checkpoint, and completion events.
-- [ ] Add visual checks so the UI does not regress while task support expands.
+- [x] Ensure graph, layer health, training loop stages, timeline scrubber, and runtime events still work for classification.
+- [x] Ensure detection runs still publish graph, infra, checkpoint, and completion events.
+- [x] Add visual checks so the UI does not regress while task support expands.
 
 ## Acceptance Criteria
 
 This stage is complete when:
 
-1. A classification resource still imports, trains, replays, and renders exactly as before.
-2. A synthetic detection resource imports and previews with boxes.
-3. Detection inference renders boxes in the bottom output panel.
-4. The API can return structured detection output without pretending it is classification.
-5. Tests cover task-neutral response handling and renderer selection.
-6. Dark and light theme screenshots show no layout or color regression.
+- [x] A classification resource still imports, trains, replays, and renders exactly as before.
+- [x] A synthetic detection resource imports and previews with boxes.
+- [x] Detection inference renders boxes in the bottom output panel.
+- [x] The API can return structured detection output without pretending it is classification.
+- [x] Tests cover task-neutral response handling and renderer selection.
+- [x] Dark and light theme screenshots show no layout or color regression.
 
 ## Repository Hygiene During This Stage
 

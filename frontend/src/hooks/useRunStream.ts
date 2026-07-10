@@ -11,6 +11,7 @@ export type MetricPoint = {
   learningRate?: number;
   stepTimeMs?: number;
   memoryPeakMb?: number;
+  values?: Record<string, number>;
 };
 
 export type LayerHistoryPoint = {
@@ -44,44 +45,60 @@ type StreamAction =
 
 const MAX_EVENTS = 60;
 
-const initialState: StreamState = {
-  status: "idle",
-  metrics: [],
-  events: [],
-  layerSnapshots: {},
-  layerHistory: {},
-  device: "unknown"
-};
+type MetricPointPatch = Partial<Omit<MetricPoint, "values">> & { values?: Record<string, number> };
 
-function upsertMetric(metrics: MetricPoint[], step: number, patch: Partial<MetricPoint>): MetricPoint[] {
+export function createInitialStreamState(): StreamState {
+  return {
+    status: "idle",
+    metrics: [],
+    events: [],
+    layerSnapshots: {},
+    layerHistory: {},
+    device: "unknown"
+  };
+}
+
+function numericPayloadValues(payload: Record<string, unknown>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(payload).filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))
+  );
+}
+
+function upsertMetric(metrics: MetricPoint[], step: number, patch: MetricPointPatch): MetricPoint[] {
   for (let index = metrics.length - 1; index >= 0; index -= 1) {
     if (metrics[index].step === step) {
       const next = metrics.slice();
-      next[index] = { ...next[index], ...patch };
+      next[index] = {
+        ...next[index],
+        ...patch,
+        values: { ...(next[index].values ?? {}), ...(patch.values ?? {}) }
+      };
       return next;
     }
     if (metrics[index].step < step) break;
   }
-  return [...metrics, { step, ...patch }];
+  return [...metrics, { step, ...patch, values: patch.values ?? {} }];
 }
 
-function applyEvent(state: StreamState, event: RunEvent): StreamState {
+export function applyStreamEvent(state: StreamState, event: RunEvent): StreamState {
   if (state.events.some((existing) => existing.event_id === event.event_id)) return state;
   const next: StreamState = { ...state, events: [event, ...state.events].slice(0, MAX_EVENTS) };
 
   switch (event.type) {
     case "metric": {
-      const patch: Partial<MetricPoint> = {};
-      if (event.payload.loss != null) patch.loss = event.payload.loss;
-      if (event.payload.accuracy != null) patch.accuracy = event.payload.accuracy;
-      if (event.payload.learning_rate != null) patch.learningRate = event.payload.learning_rate;
+      const values = numericPayloadValues(event.payload);
+      const patch: MetricPointPatch = { values };
+      if (values.loss != null) patch.loss = values.loss;
+      if (values.accuracy != null) patch.accuracy = values.accuracy;
+      if (values.learning_rate != null) patch.learningRate = values.learning_rate;
       next.metrics = upsertMetric(state.metrics, event.step, patch);
       return next;
     }
     case "infra": {
-      const patch: Partial<MetricPoint> = {};
-      if (event.payload.step_time_ms != null) patch.stepTimeMs = event.payload.step_time_ms;
-      if (event.payload.memory_peak_mb != null) patch.memoryPeakMb = event.payload.memory_peak_mb;
+      const values = numericPayloadValues(event.payload);
+      const patch: MetricPointPatch = { values };
+      if (values.step_time_ms != null) patch.stepTimeMs = values.step_time_ms;
+      if (values.memory_peak_mb != null) patch.memoryPeakMb = values.memory_peak_mb;
       next.metrics = upsertMetric(state.metrics, event.step, patch);
       if (event.payload.device) next.device = event.payload.device;
       return next;
@@ -126,13 +143,13 @@ function applyEvent(state: StreamState, event: RunEvent): StreamState {
 function reducer(state: StreamState, action: StreamAction): StreamState {
   switch (action.type) {
     case "reset":
-      return initialState;
+      return createInitialStreamState();
     case "start":
-      return { ...initialState, status: "streaming", runId: action.runId };
+      return { ...createInitialStreamState(), status: "streaming", runId: action.runId };
     case "status":
       return { ...state, status: action.status };
     case "event":
-      return applyEvent(state, action.event);
+      return applyStreamEvent(state, action.event);
     case "snapshots":
       return { ...state, layerSnapshots: action.snapshots, pulsedNodeId: action.pulsedNodeId };
     default:
@@ -141,7 +158,7 @@ function reducer(state: StreamState, action: StreamAction): StreamState {
 }
 
 export function useRunStream() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, undefined, createInitialStreamState);
   const sourceRef = useRef<EventSource | null>(null);
   const timersRef = useRef<number[]>([]);
   const replayIndexRef = useRef(0);

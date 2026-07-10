@@ -95,17 +95,37 @@ def load_model_and_weights(source_path: Path, entry_class: str, checkpoint_path:
     return model
 
 
-def forward_with_model(model: nn.Module, image_tensor: torch.Tensor) -> dict[str, Any]:
-    """Run one forward pass on any model, capturing per-layer activations via hooks."""
+def _first_tensor(value: Any) -> torch.Tensor | None:
+    if isinstance(value, torch.Tensor):
+        return value
+    if isinstance(value, dict):
+        for item in value.values():
+            tensor = _first_tensor(item)
+            if tensor is not None:
+                return tensor
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            tensor = _first_tensor(item)
+            if tensor is not None:
+                return tensor
+    return None
+
+
+def forward_with_layer_capture(model: nn.Module, *args: Any, **kwargs: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """Run an inference call while collecting tensor activations from parameterized layers."""
     layers: list[dict[str, Any]] = []
     handles = []
 
     def make_hook(layer_name: str):
-        def hook(_module: nn.Module, inputs: tuple, output: torch.Tensor) -> None:
-            if not isinstance(output, torch.Tensor):
+        def hook(_module: nn.Module, inputs: tuple, output: Any) -> None:
+            detached = _first_tensor(output)
+            if detached is None:
                 return
-            detached = output.detach()
-            input_shape = list(inputs[0].shape[1:]) if inputs and isinstance(inputs[0], torch.Tensor) else None
+            detached = detached.detach()
+            input_tensor = _first_tensor(inputs)
+            input_shape = None
+            if input_tensor is not None:
+                input_shape = list(input_tensor.shape[1:]) if input_tensor.dim() >= 4 else list(input_tensor.shape)
             layers.append(
                 {
                     "layer_id": layer_name,
@@ -124,10 +144,19 @@ def forward_with_model(model: nn.Module, image_tensor: torch.Tensor) -> dict[str
 
     try:
         with torch.no_grad():
-            logits = model(image_tensor)
+            output = model(*args, **kwargs)
     finally:
         for handle in handles:
             handle.remove()
+
+    return output, layers
+
+
+def forward_with_model(model: nn.Module, image_tensor: torch.Tensor) -> dict[str, Any]:
+    """Run a classification forward pass and capture per-layer activations."""
+    logits, layers = forward_with_layer_capture(model, image_tensor)
+    if not isinstance(logits, torch.Tensor) or logits.dim() != 2:
+        raise ValueError("Classification model output must have shape [batch, classes].")
 
     probabilities = torch.softmax(logits, dim=1).squeeze(0)
     return {

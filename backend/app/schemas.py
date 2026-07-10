@@ -75,6 +75,8 @@ class LayerSnapshot(BaseModel):
 class PredictionResponse(BaseModel):
     task: str = "classification"
     output: dict[str, Any] = Field(default_factory=dict)
+    output_schema: dict[str, Any] | None = None
+    metric_schema: dict[str, Any] | None = None
     sample_index: int
     label: int | None = None
     prediction: int | None = None
@@ -153,16 +155,53 @@ class ErrorAnalysis(BaseModel):
     misclassified: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class TaskMetricSummary(BaseModel):
+    key: str
+    label: str
+    value: float | int | str | None = None
+    unit: str | None = None
+
+
+class DetectionBoxEvidence(BaseModel):
+    box: list[float]
+    label: int
+    label_name: str | None = None
+    score: float | None = None
+    matched_iou: float | None = None
+
+
+class DetectionSampleEvidence(BaseModel):
+    sample_index: int
+    image_shape: list[int] = Field(default_factory=list)
+    image_pixels: list[float] = Field(default_factory=list)
+    mean_iou: float | None = None
+    predicted: list[DetectionBoxEvidence] = Field(default_factory=list)
+    target: list[DetectionBoxEvidence] = Field(default_factory=list)
+    predicted_total: int = 0
+    target_total: int = 0
+    predicted_truncated: bool = False
+    target_truncated: bool = False
+
+
+class DetectionAnalysis(BaseModel):
+    mean_iou: float | None = None
+    evaluated_samples: int = 0
+    evidence: list[DetectionSampleEvidence] = Field(default_factory=list)
+
+
 class RunReport(BaseModel):
     run_id: str
+    task: str = "classification"
     generated_for_checkpoint: int | None = None
     final_loss: float | None = None
     best_accuracy: float | None = None
     overfit_gap: float | None = None
     loss_plateau_step: int | None = None
+    task_metrics: list[TaskMetricSummary] = Field(default_factory=list)
     layer_health: list[LayerHealth] = Field(default_factory=list)
     checkpoint_evaluations: list[CheckpointEvaluation] = Field(default_factory=list)
     error_analysis: ErrorAnalysis | None = None
+    detection_analysis: DetectionAnalysis | None = None
     insights: list[RunInsight] = Field(default_factory=list)
 
 

@@ -96,6 +96,9 @@ class LoadedTrainingResource:
             schema.setdefault("primary", "accuracy")
             schema.setdefault("monitors", ["loss", "accuracy"])
             schema.setdefault("loss", "cross_entropy")
+        elif self.task == "detection":
+            schema.setdefault("primary", "mean_iou")
+            schema.setdefault("monitors", ["loss", "mean_iou"])
         else:
             schema.setdefault("primary", "loss")
             schema.setdefault("monitors", ["loss"])

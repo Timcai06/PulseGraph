@@ -299,18 +299,26 @@ def _publish_source_training_events(
     layers_lookup = {step: layers for step, layers in layers_by_step}
     for metric in metrics:
         step = int(metric["step"])
+        metric_payload = {
+            key: value
+            for key, value in metric.items()
+            if key
+            not in {
+                "step",
+                "step_time_ms",
+                "samples_per_sec",
+                "elapsed_sec",
+            }
+            and isinstance(value, (int, float))
+        }
+        metric_payload["phase"] = "train"
         events = [
             _run_event(
                 run_id,
                 "metric",
                 "training",
                 step,
-                {
-                    "loss": metric["loss"],
-                    "accuracy": metric["accuracy"],
-                    "learning_rate": metric["learning_rate"],
-                    "phase": "train",
-                },
+                metric_payload,
             ),
             _run_event(
                 run_id,
@@ -498,14 +506,18 @@ def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIM
     return samples
 
 
-def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, torch.Tensor, str]:
+def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, object, str]:
     images: list[torch.Tensor] = []
-    labels: list[int] = []
+    targets: list[object] = []
     for index in range(limit):
-        image, label = resource.inference_sample(index)
+        image, target = resource.inference_sample(index)
         images.append(_as_model_input(image))
-        labels.append(int(label))
-    return torch.cat(images, dim=0).detach().cpu(), torch.tensor(labels, dtype=torch.long), resource.sample_source
+        targets.append(target)
+    return (
+        torch.cat(images, dim=0).detach().cpu(),
+        resource.runtime.pack_probe_targets(targets),
+        resource.sample_source,
+    )
 
 
 def _run_resource_training_job(
@@ -542,6 +554,7 @@ def _run_resource_training_job(
     metrics: list[dict] = []
     layers_by_step: list[tuple[int, list[dict]]] = []
     start = time.perf_counter()
+    probe_images, probe_targets, sample_source = _resource_probe_samples(resource, min(64, batch_size))
 
     model.train()
     for step in range(1, steps + 1):
@@ -551,20 +564,24 @@ def _run_resource_training_job(
         step_time_ms = (time.perf_counter() - step_start) * 1000
         should_record = step % telemetry_stride == 0 or step == steps
         if should_record:
+            model.eval()
+            telemetry_images = probe_images if resource.task == "detection" else images
+            telemetry_targets = probe_targets if resource.task == "detection" else labels
+            telemetry = runtime.telemetry_snapshot(model, telemetry_images, telemetry_targets)
+            model.train()
             metrics.append(
                 {
                     "step": step,
                     "loss": round(step_result.loss, 4),
                     **{name: round(value, 4) for name, value in step_result.metrics.items()},
+                    **{name: round(value, 4) for name, value in telemetry.metrics.items()},
                     "learning_rate": learning_rate,
                     "step_time_ms": round(step_time_ms, 2),
                     "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
                     "elapsed_sec": round(time.perf_counter() - start, 2),
                 }
             )
-            model.eval()
-            layers_by_step.append((step, runtime.capture_layers(model, images[:1])))
-            model.train()
+            layers_by_step.append((step, telemetry.layers))
 
     run_store.save_config(
         run_id,
@@ -595,8 +612,11 @@ def _run_resource_training_job(
     )
 
     sample = io.BytesIO()
-    probe_images, probe_labels, sample_source = _resource_probe_samples(resource, min(64, batch_size))
-    torch.save({"images": probe_images, "labels": probe_labels, "sample_source": sample_source}, sample)
+    target_key = "labels" if resource.task == "classification" else "targets"
+    torch.save(
+        {"images": probe_images, target_key: probe_targets, "sample_source": sample_source, "task": resource.task},
+        sample,
+    )
     run_store.save_samples(run_id, sample.getvalue())
 
     checkpoint = io.BytesIO()

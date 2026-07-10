@@ -17,6 +17,7 @@ import {
   deleteRun,
   getDemoModel,
   getHealth,
+  getRunDetail,
   listRuns,
   previewResource,
   runForward,
@@ -43,6 +44,7 @@ import type { GhostEdge } from "./lib/graphPorts";
 import { classificationOutputFromPrediction, displayClassName, inferenceOutputKind } from "./lib/inferenceView";
 import { configureMotionDefaults, motionDuration, motionDurations, motionEase, motionStagger } from "./lib/motion";
 import { splitRunBuckets } from "./lib/runViews";
+import { runContractFromConfig, type RunContract } from "./lib/runContract";
 import {
   deriveCausalFocus,
   deriveTimelineFrames,
@@ -117,6 +119,7 @@ export default function App() {
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
   const [pendingForwardRun, setPendingForwardRun] = useState<string | undefined>();
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
+  const [activeRunContract, setActiveRunContract] = useState<RunContract | undefined>();
   const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
@@ -237,6 +240,24 @@ export default function App() {
       setSelectedGhostEdgeId(undefined);
     }
   }, [stream.graph]);
+
+  useEffect(() => {
+    if (!stream.runId) {
+      setActiveRunContract(undefined);
+      return;
+    }
+    let cancelled = false;
+    getRunDetail(stream.runId)
+      .then((detail) => {
+        if (!cancelled) setActiveRunContract(runContractFromConfig(detail.config));
+      })
+      .catch(() => {
+        if (!cancelled) setActiveRunContract(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [stream.runId]);
 
   const latestStep = stream.metrics.length ? stream.metrics[stream.metrics.length - 1].step : 0;
   const runBuckets = useMemo(() => splitRunBuckets(liveRuns), [liveRuns]);
@@ -464,6 +485,8 @@ export default function App() {
   const replayPulseNodeId = timelineLive ? stream.pulsedNodeId : causalFocus.layerId ?? stream.pulsedNodeId;
   const inspectedNode = inspectedNodeId === selectedNode?.id ? selectedNode : undefined;
   const selectedGhostEdge = ghostEdges.find((edge) => edge.id === selectedGhostEdgeId);
+  const metricTask = activeRunContract?.task ?? prediction?.task ?? sourceRecipe?.summary?.task;
+  const metricSchema = activeRunContract?.metricSchema ?? prediction?.metric_schema ?? sourceRecipe?.summary?.metricSchema ?? undefined;
 
   const handleTimelineStepChange = (step: number) => {
     const latestFrameStep = timelineFrames[timelineFrames.length - 1]?.step;
@@ -525,7 +548,7 @@ export default function App() {
               />
             </div>
           )}
-          <StageStats metrics={stream.metrics} />
+          <StageStats metrics={stream.metrics} task={metricTask} metricSchema={metricSchema} />
           <ControlRail
             onResourceUpload={handleResourceUpload}
             onRunTraining={handleRunTraining}
@@ -576,6 +599,8 @@ export default function App() {
                   status={stream.status}
                   theme={theme}
                   runKind={currentRunKind}
+                  task={metricTask}
+                  metricSchema={metricSchema}
                   selectedStep={timelineLive ? undefined : selectedTimelineFrameStep}
                 />
                 <TimelineScrubber

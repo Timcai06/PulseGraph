@@ -8,8 +8,8 @@ from app.inspector.graph_builder import build_inferred_graph
 from app.inspector.pt_inspector import summarize_tensor
 from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource
 from app.runtime import mnist_data
-from app.runtime.inference_output import classification_output
-from app.runtime.model_loader import forward_with_model, load_model_and_weights
+from app.runtime.model_loader import load_model_and_weights
+from app.runtime.task_runtime import resolve_task_runtime
 from app.schemas import LayerSnapshot, ModelGraph, PredictionResponse, RunDetail
 
 
@@ -20,28 +20,44 @@ class ReplayError(Exception):
         self.detail = detail
 
 
-def load_probe_samples(store: RunStore, run_id: str) -> tuple[torch.Tensor, torch.Tensor, str] | None:
-    """Probe samples recorded at training time: {"images": [N,...], "labels": [N]}."""
+def load_probe_samples(store: RunStore, run_id: str) -> tuple[torch.Tensor, object, str] | None:
+    """Load classification labels or task-structured targets recorded with probe images."""
     path = store.samples_path(run_id)
     if path is None:
         return None
     try:
         bundle = torch.load(path, map_location="cpu", weights_only=True)
-        images, labels = bundle["images"], bundle["labels"]
+        images = bundle["images"]
+        targets = bundle.get("targets", bundle.get("labels"))
         sample_source = str(bundle.get("sample_source") or "probe")
     except Exception:
         return None
-    if not isinstance(images, torch.Tensor) or not isinstance(labels, torch.Tensor) or not images.shape[0]:
+    if not isinstance(images, torch.Tensor) or not images.shape[0]:
         return None
-    return images.float(), labels.long(), sample_source
+    if isinstance(targets, torch.Tensor):
+        if not targets.shape[0] or int(targets.shape[0]) < int(images.shape[0]):
+            return None
+        targets = targets.long()
+    elif isinstance(targets, list):
+        if len(targets) < int(images.shape[0]):
+            return None
+    else:
+        return None
+    return images.float(), targets, sample_source
 
 
-def _pick_sample(store: RunStore, run_id: str, index: int) -> tuple[torch.Tensor, int, str]:
+def _pick_sample(store: RunStore, run_id: str, index: int, task: str) -> tuple[torch.Tensor, object, str]:
     probe = load_probe_samples(store, run_id)
     if probe is not None:
-        images, labels, sample_source = probe
+        images, targets, sample_source = probe
         position = index % images.shape[0]
-        return images[position : position + 1], int(labels[position].item()), sample_source
+        if isinstance(targets, torch.Tensor):
+            target: object = int(targets[position].item())
+        else:
+            target = targets[position]
+        return images[position : position + 1], target, sample_source
+    if task != "classification":
+        raise ReplayError(400, f"No structured probe samples were recorded for task='{task}'.")
     mnist = mnist_data.load_test_samples()
     if mnist is not None:
         images, labels = mnist
@@ -95,32 +111,33 @@ def run_replay_forward(store: RunStore, run_id: str, checkpoint_step: int = 0, i
         if model is None:
             raise ReplayError(500, "Failed to rebuild the model from recorded source and checkpoint.")
 
-    image, label, sample_source = _pick_sample(store, run_id, index)
+    task = str(config.get("task") or "classification").strip().lower()
+    image, target, sample_source = _pick_sample(store, run_id, index, task)
+    class_names = config.get("class_names") if isinstance(config.get("class_names"), list) else None
     try:
-        result = forward_with_model(model, image)
+        runtime = resolve_task_runtime(task)
+        result = runtime.inference(model, image, target, class_names)
     except Exception as exc:
         raise ReplayError(500, f"Forward pass failed: {exc}") from exc
 
-    class_names = config.get("class_names") if isinstance(config.get("class_names"), list) else None
-    probabilities = result["probabilities"]
-    prediction = int(result["prediction"])
-    task = str(config.get("task") or "classification")
     display_image = image[0] if image.dim() == 4 and image.shape[0] == 1 else image
 
     return PredictionResponse(
         task=task,
-        output=classification_output(label=label, prediction=prediction, probabilities=probabilities, class_names=class_names),
+        output=result.output,
+        output_schema=config.get("output_schema") if isinstance(config.get("output_schema"), dict) else None,
+        metric_schema=config.get("metric_schema") if isinstance(config.get("metric_schema"), dict) else None,
         sample_index=index,
-        label=label,
-        prediction=prediction,
+        label=result.label,
+        prediction=result.prediction,
         weights="random" if config.get("weights") == "initial-random" or config.get("inference_only") is True else "trained",
         sample_source=sample_source if sample_source in {"probe", "mnist", "synthetic"} else "synthetic",
         class_names=class_names,
         image_shape=image_shape_from_sample(image, config.get("input_shape") if isinstance(config.get("input_shape"), list) else None),
         image_pixels=[float(value) for value in display_image.flatten().tolist()],
-        probabilities=probabilities,
+        probabilities=result.probabilities or [],
         graph=_run_graph(store, run_id, checkpoint_path),
-        layers=[LayerSnapshot(**layer) for layer in result["layers"]],
+        layers=[LayerSnapshot(**layer) for layer in result.layers],
     )
 
 
