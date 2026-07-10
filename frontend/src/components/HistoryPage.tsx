@@ -14,6 +14,9 @@ gsap.registerPlugin(useGSAP, Draggable, InertiaPlugin);
 
 type Props = {
   runs: RunSummary[];
+  title?: string;
+  initialStatusFilter?: StatusFilter;
+  statusFilters?: StatusFilter[];
   watchedRunId?: string;
   onWatchRun: (runId: string) => void;
   onOpenDetail: (runId: string, origin?: DOMRect) => void;
@@ -27,6 +30,8 @@ type PreviewState = {
 
 type StatusFilter = "all" | "completed" | "live" | "watched";
 
+const defaultStatusFilters: StatusFilter[] = ["all", "completed", "live", "watched"];
+
 function formatTime(seconds: number) {
   if (!seconds) return "unknown";
   return new Date(seconds * 1000).toLocaleString();
@@ -38,7 +43,16 @@ function extractLosses(rows: Record<string, unknown>[]): number[] {
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
 
-export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDeleteRun }: Props) {
+export function HistoryPage({
+  runs,
+  title = "Run Library",
+  initialStatusFilter = "all",
+  statusFilters = defaultStatusFilters,
+  watchedRunId,
+  onWatchRun,
+  onOpenDetail,
+  onDeleteRun
+}: Props) {
   const stripRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -46,7 +60,7 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
   const lossCache = useRef(new Map<string, number[]>());
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatusFilter);
   const reducedMotion = useReducedMotion();
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -137,7 +151,7 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
     <section className="history-page">
       <header className="page-heading">
         <div>
-          <h2>Run Library</h2>
+          <h2>{title}</h2>
           <p>Filter runs by state, inspect trends, replay checkpoints, and open reports from the same library.</p>
         </div>
         <span>{orderedRuns.length} / {runs.length} runs</span>
@@ -148,18 +162,20 @@ export function HistoryPage({ runs, watchedRunId, onWatchRun, onOpenDetail, onDe
           <span>Search runs</span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="run id" />
         </label>
-        <div className="library-filters" aria-label="run status filters">
-          {(["all", "completed", "live", "watched"] as StatusFilter[]).map((filter) => (
-            <button
-              className={statusFilter === filter ? "active" : ""}
-              key={filter}
-              onClick={() => setStatusFilter(filter)}
-              type="button"
-            >
-              {filter}
-            </button>
-          ))}
-        </div>
+        {statusFilters.length > 1 ? (
+          <div className="library-filters" aria-label="run status filters">
+            {statusFilters.map((filter) => (
+              <button
+                className={statusFilter === filter ? "active" : ""}
+                key={filter}
+                onClick={() => setStatusFilter(filter)}
+                type="button"
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {orderedRuns.length === 0 ? (

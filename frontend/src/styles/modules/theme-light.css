@@ -126,7 +126,6 @@
 
 [data-theme="light"] .control-card,
 [data-theme="light"] .control-disclosure,
-[data-theme="light"] .control-summary-grid div,
 [data-theme="light"] .control-mini-action {
   background: rgba(255, 255, 255, 0.72);
 }

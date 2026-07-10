@@ -6,6 +6,7 @@ import {
   FileCode2,
   FolderOpen,
   Info,
+  ListFilter,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -30,6 +31,7 @@ type Props = {
   onReset: () => void;
   onWatchRun: (runId: string) => void;
   onOpenDetail: (runId: string) => void;
+  onViewAllRuns: () => void;
   trainAvailable: boolean;
   trainingSteps: number;
   onTrainingStepsChange: (steps: number) => void;
@@ -37,8 +39,6 @@ type Props = {
   onTelemetryStrideChange: (stride: number) => void;
   forwardTargetLabel: string;
   currentRunKind?: string;
-  metricCount: number;
-  eventCount: number;
   hasPrediction: boolean;
   liveRuns: RunSummary[];
   watchedRunId?: string;
@@ -47,11 +47,6 @@ type Props = {
 };
 
 type ControlView = "resource" | "train" | "run";
-
-type SummaryRow = {
-  label: string;
-  value: string;
-};
 
 const controlViews: Array<{ value: ControlView; label: string }> = [
   { value: "resource", label: "Resource" },
@@ -74,29 +69,6 @@ function toNamedFiles(list: FileList | null): NamedSourceFile[] {
       return resourceAssetSuffixes.some((suffix) => lower.endsWith(suffix));
     })
     .map(({ file, path }) => ({ file, path }));
-}
-
-function runSummaryRows(currentRunKind?: string, forwardTargetLabel?: string, metricCount?: number, eventCount?: number, hasPrediction?: boolean): SummaryRow[] {
-  return [
-    { label: "Current", value: currentRunKind ?? "demo" },
-    { label: "Target", value: forwardTargetLabel || "unselected" },
-    { label: "Metrics", value: `${metricCount ?? 0}` },
-    { label: "Events", value: `${eventCount ?? 0}` },
-    { label: "Forward", value: hasPrediction ? "ready" : "waiting" }
-  ];
-}
-
-function statGrid({ rows }: { rows: SummaryRow[] }) {
-  return (
-    <dl className="control-summary-grid">
-      {rows.map((row) => (
-        <div key={row.label}>
-          <dt>{row.label}</dt>
-          <dd title={row.value}>{row.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
 }
 
 function Disclosure({
@@ -302,12 +274,11 @@ function TrainView({
 function RunView({
   busy,
   errorMessage,
-  eventCount,
   forwardTargetLabel,
   hasPrediction,
   liveRuns,
-  metricCount,
   onOpenDetail,
+  onViewAllRuns,
   onReset,
   onRunForward,
   onWatchRun,
@@ -317,20 +288,19 @@ function RunView({
   Props,
   | "busy"
   | "errorMessage"
-  | "eventCount"
   | "forwardTargetLabel"
   | "hasPrediction"
   | "liveRuns"
-  | "metricCount"
   | "onOpenDetail"
+  | "onViewAllRuns"
   | "onReset"
   | "onRunForward"
   | "onWatchRun"
   | "watchedRunId"
   | "currentRunKind"
 >) {
-  const runRows = useMemo(() => runSummaryRows(currentRunKind, forwardTargetLabel, metricCount, eventCount, hasPrediction), [currentRunKind, eventCount, forwardTargetLabel, hasPrediction, metricCount]);
   const orderedRuns = useMemo(() => [...liveRuns].sort((a, b) => b.last_step - a.last_step || b.event_count - a.event_count), [liveRuns]);
+  const previewRuns = orderedRuns.slice(0, 3);
 
   return (
     <div aria-labelledby="control-tab-run" className="control-panel" id="control-panel-run" role="tabpanel">
@@ -343,7 +313,10 @@ function RunView({
           <span className={`control-card-badge ${hasPrediction ? "ready" : "idle"}`}>{hasPrediction ? "forward ready" : "idle"}</span>
         </div>
 
-        {statGrid({ rows: runRows })}
+        <div className="control-run-context">
+          <span>Target</span>
+          <strong title={forwardTargetLabel}>{forwardTargetLabel || "none"}</strong>
+        </div>
 
         <div className="control-inline-actions">
           <button onClick={onRunForward} disabled={busy === "forward"} type="button">
@@ -355,10 +328,15 @@ function RunView({
         </div>
       </section>
 
-      <Disclosure title="Live runs" subtitle={`${orderedRuns.length} active`} defaultOpen={orderedRuns.length === 0}>
-        {orderedRuns.length ? (
+      <Disclosure title="Live runs" subtitle={`${orderedRuns.length} active`} defaultOpen={orderedRuns.length > 0 && orderedRuns.length <= 3}>
+        {previewRuns.length ? (
           <div className="control-run-list">
-            {orderedRuns.map((run) => (
+            {orderedRuns.length > previewRuns.length ? (
+              <button className="control-view-all secondary" onClick={onViewAllRuns} type="button">
+                <ListFilter size={14} /> View all {orderedRuns.length}
+              </button>
+            ) : null}
+            {previewRuns.map((run) => (
               <div className="run-row" key={run.run_id}>
                 <button
                   className={`run-item ${watchedRunId === run.run_id ? "watching" : "secondary"}`}
@@ -366,9 +344,11 @@ function RunView({
                   type="button"
                 >
                   <Radio size={14} className={run.completed ? "" : "live"} />
-                  <span className="run-name">{run.run_id}</span>
-                  <span className="run-meta">
-                    {run.completed ? "done" : "live"} · step {run.last_step}
+                  <span className="run-copy">
+                    <span className="run-name">{run.run_id}</span>
+                    <span className="run-meta">
+                      {run.completed ? "done" : "live"} · step {run.last_step}
+                    </span>
                   </span>
                 </button>
                 <button
@@ -401,6 +381,7 @@ export function ControlRail({
   onReset,
   onWatchRun,
   onOpenDetail,
+  onViewAllRuns,
   trainAvailable,
   trainingSteps,
   onTrainingStepsChange,
@@ -408,8 +389,6 @@ export function ControlRail({
   onTelemetryStrideChange,
   forwardTargetLabel,
   currentRunKind,
-  metricCount,
-  eventCount,
   hasPrediction,
   liveRuns,
   watchedRunId,
@@ -422,13 +401,25 @@ export function ControlRail({
   const drawerRef = useRef<HTMLElement | null>(null);
   const handleRef = useRef<HTMLButtonElement | null>(null);
   const viewRef = useRef<HTMLDivElement | null>(null);
+  const viewScrollPositionsRef = useRef<Record<ControlView, number>>({ resource: 0, train: 0, run: 0 });
   const reducedMotion = useReducedMotion();
+
+  const selectControlView = (nextView: ControlView, focus = false) => {
+    if (nextView === activeView) return;
+    const viewport = viewRef.current;
+    if (viewport) viewScrollPositionsRef.current[activeView] = viewport.scrollTop;
+    setActiveView(nextView);
+    requestAnimationFrame(() => {
+      viewRef.current?.scrollTo({ top: viewScrollPositionsRef.current[nextView], behavior: "auto" });
+      if (focus) document.getElementById(`control-tab-${nextView}`)?.focus();
+    });
+  };
 
   useEffect(() => {
     if (!busy) return;
-    if (busy === "resource") setActiveView("resource");
-    if (busy === "train") setActiveView("train");
-    if (busy === "forward") setActiveView("run");
+    if (busy === "resource") selectControlView("resource");
+    if (busy === "train") selectControlView("train");
+    if (busy === "forward") selectControlView("run");
   }, [busy]);
 
   useEffect(() => {
@@ -461,7 +452,7 @@ export function ControlRail({
 
   useGSAP(
     () => {
-      const panel = viewRef.current;
+      const panel = viewRef.current?.firstElementChild as HTMLElement | null;
       if (!panel) return;
       if (reducedMotion) {
         gsap.set(panel, { opacity: 1, y: 0 });
@@ -499,8 +490,7 @@ export function ControlRail({
 
     event.preventDefault();
     const nextView = controlViews[nextIndex].value;
-    setActiveView(nextView);
-    requestAnimationFrame(() => document.getElementById(`control-tab-${nextView}`)?.focus());
+    selectControlView(nextView, true);
   };
 
   return (
@@ -521,7 +511,7 @@ export function ControlRail({
               count={tabCounts[view.value]}
               key={view.value}
               label={view.label}
-              onSelect={setActiveView}
+              onSelect={selectControlView}
               value={view.value}
             />
           ))}
@@ -552,12 +542,11 @@ export function ControlRail({
               busy={busy}
               currentRunKind={currentRunKind}
               errorMessage={errorMessage}
-              eventCount={eventCount}
               forwardTargetLabel={forwardTargetLabel}
               hasPrediction={hasPrediction}
               liveRuns={liveRuns}
-              metricCount={metricCount}
               onOpenDetail={onOpenDetail}
+              onViewAllRuns={onViewAllRuns}
               onReset={onReset}
               onRunForward={onRunForward}
               onWatchRun={onWatchRun}

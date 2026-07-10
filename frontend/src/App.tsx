@@ -116,6 +116,7 @@ export default function App() {
   const [detailOrigin, setDetailOrigin] = useState<DOMRect | undefined>();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<"monitor" | "history">("monitor");
+  const [historyMode, setHistoryMode] = useState<"completed" | "live">("completed");
   const [forwardTarget, setForwardTarget] = useState<ForwardTarget | undefined>();
   const [pendingForwardRun, setPendingForwardRun] = useState<string | undefined>();
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
@@ -512,7 +513,14 @@ export default function App() {
         <button className={page === "monitor" ? "active" : ""} onClick={() => setPage("monitor")} type="button">
           Monitor
         </button>
-        <button className={page === "history" ? "active" : ""} onClick={() => setPage("history")} type="button">
+        <button
+          className={page === "history" ? "active" : ""}
+          onClick={() => {
+            setHistoryMode("completed");
+            setPage("history");
+          }}
+          type="button"
+        >
           History <span>{runBuckets.history.length}</span>
         </button>
       </nav>
@@ -560,6 +568,10 @@ export default function App() {
               setDetailOrigin(undefined);
               setDetailRunId(runId);
             }}
+            onViewAllRuns={() => {
+              setHistoryMode("live");
+              setPage("history");
+            }}
             trainAvailable={Boolean(sourceRecipe)}
             loadedResource={sourceRecipe?.summary}
             trainingSteps={trainingSteps}
@@ -568,8 +580,6 @@ export default function App() {
             onTelemetryStrideChange={(stride) => setTelemetryStride(Math.max(1, Math.min(500, Math.trunc(stride || 1))))}
             forwardTargetLabel={forwardTarget ? describeForwardTarget(forwardTarget) : "none"}
             currentRunKind={currentRunKind}
-            metricCount={stream.metrics.length}
-            eventCount={stream.events.length}
             hasPrediction={Boolean(prediction)}
             liveRuns={runBuckets.active}
             watchedRunId={stream.runId}
@@ -675,7 +685,11 @@ export default function App() {
         </div>
       ) : (
         <HistoryPage
-          runs={runBuckets.history}
+          key={historyMode}
+          runs={historyMode === "live" ? runBuckets.active : runBuckets.history}
+          initialStatusFilter={historyMode === "live" ? "live" : "all"}
+          statusFilters={historyMode === "live" ? ["live"] : undefined}
+          title={historyMode === "live" ? "Live Runs" : "Run Library"}
           watchedRunId={stream.runId}
           onWatchRun={handleWatchRun}
           onOpenDetail={(runId, origin) => {

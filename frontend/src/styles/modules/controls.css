@@ -1,12 +1,11 @@
 .control-rail {
   display: grid;
-  grid-auto-rows: max-content;
-  align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
   min-height: 0;
   padding: 12px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .control-rail-header {
@@ -147,14 +146,34 @@
 }
 
 .control-view-frame {
-  align-self: start;
+  align-self: stretch;
+  height: 100%;
   min-width: 0;
   min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+  scrollbar-color: rgba(96, 165, 250, 0.48) transparent;
+  scrollbar-width: thin;
+}
+
+.control-view-frame::-webkit-scrollbar {
+  width: 5px;
+}
+
+.control-view-frame::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.48);
 }
 
 .control-panel {
   display: grid;
   gap: 10px;
+  min-width: 0;
+  align-content: start;
 }
 
 .control-card {
@@ -203,46 +222,6 @@
 
 .control-card-note {
   margin: -2px 0 0;
-}
-
-.control-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-}
-
-.control-summary-grid div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 12px;
-  background: rgba(2, 6, 23, 0.18);
-  padding: 8px 9px;
-}
-
-.control-summary-grid dt,
-.control-summary-grid dd {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.control-summary-grid dt {
-  color: var(--text-muted);
-  font-size: 8.5px;
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.control-summary-grid dd {
-  color: var(--text-soft);
-  font-family: var(--font-mono);
-  font-size: 11px;
 }
 
 .control-inline-actions {
@@ -430,6 +409,30 @@
   gap: 10px;
 }
 
+.control-run-context {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 3px 8px;
+  min-width: 0;
+}
+
+.control-run-context span {
+  color: var(--text-muted);
+  font-size: 9.5px;
+  text-transform: uppercase;
+}
+
+.control-run-context strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .number-field {
   display: grid;
   gap: 6px;
@@ -456,6 +459,37 @@
 .control-run-list {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.control-run-list .run-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.control-run-list .run-item {
+  min-width: 0;
+  margin: 0;
+}
+
+.control-run-list .icon-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.run-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.control-view-all {
+  margin-top: 2px;
 }
 
 .control-empty-note {

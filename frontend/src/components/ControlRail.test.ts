@@ -31,11 +31,14 @@ describe("ControlRail", () => {
     expect(controlRailSource).toContain("webkitRelativePath");
   });
 
-  it("keeps only live runs inside a collapsed surface", () => {
+  it("keeps a bounded live-run preview inside a collapsed surface", () => {
     expect(controlRailSource).toContain("control-disclosure");
     expect(controlRailSource).toContain("Live runs");
     expect(controlRailSource).toContain("run-item");
-    expect(controlRailSource).toContain("control-summary-grid");
+    expect(controlRailSource).toContain("orderedRuns.slice(0, 3)");
+    expect(controlRailSource).toContain("View all {orderedRuns.length}");
+    expect(controlRailSource).toContain("control-run-context");
+    expect(controlRailSource).not.toContain("control-summary-grid");
     expect(controlRailSource).not.toContain("Preview samples");
     expect(controlRailSource).not.toContain("Resource contract");
     expect(controlRailSource).not.toContain("resourceContractRows");
@@ -44,5 +47,12 @@ describe("ControlRail", () => {
     expect(controlRailSource).not.toContain("Preview stays");
     expect(controlRailSource).not.toContain("Training uses");
     expect(controlRailSource).not.toContain("Prediction output");
+  });
+
+  it("keeps tab chrome fixed while each context owns its scroll position", () => {
+    expect(controlRailSource).toContain("viewScrollPositionsRef");
+    expect(controlRailSource).toContain("viewport.scrollTop");
+    expect(controlRailSource).toContain("viewRef.current?.scrollTo");
+    expect(controlRailSource).toContain("firstElementChild");
   });
 });

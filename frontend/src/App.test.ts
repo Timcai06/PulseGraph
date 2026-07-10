@@ -256,6 +256,17 @@ describe("App workspace layout", () => {
     expect(panelStylesSource).not.toContain("left: calc(var(--rail-w)");
   });
 
+  it("routes overflow live runs into the filtered run library", () => {
+    expect(controlRailSource).toContain("onViewAllRuns");
+    expect(appSource).toContain('setHistoryMode("live")');
+    expect(appSource).toContain('runs={historyMode === "live" ? runBuckets.active : runBuckets.history}');
+    expect(appSource).toContain('initialStatusFilter={historyMode === "live" ? "live" : "all"}');
+    expect(appSource).toContain('statusFilters={historyMode === "live" ? ["live"] : undefined}');
+    expect(historyPageSource).toContain("initialStatusFilter");
+    expect(historyPageSource).toContain("statusFilters.length > 1");
+    expect(historyPageSource).toContain("{title}");
+  });
+
   it("adds a selected layer inspector to Ops", () => {
     expect(layerInspectorSource).toContain("LayerInspector");
     expect(layerInspectorSource).toContain("activation_sparsity");

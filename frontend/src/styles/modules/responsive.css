@@ -1,6 +1,6 @@
 @media (max-width: 1180px) {
   :root {
-    --rail-w: 236px;
+    --rail-w: 264px;
   }
 
   .page-tabs {
@@ -22,6 +22,36 @@
 
   .stage-stats .stat-value {
     font-size: 40px;
+  }
+}
+
+@media (max-height: 640px) and (min-width: 861px) {
+  .control-rail {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .control-rail-kicker,
+  .control-card-kicker {
+    margin-bottom: 2px;
+  }
+
+  .control-tabs button {
+    min-height: 40px;
+    padding: 6px 8px;
+  }
+
+  .control-card {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .control-disclosure summary {
+    padding: 8px 10px;
+  }
+
+  .control-disclosure-body {
+    padding: 0 10px 10px;
   }
 }
 
@@ -101,6 +131,14 @@
   .control-rail {
     border-right: 0;
     padding: 10px;
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+
+  .control-view-frame {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .control-rail-header {
@@ -134,7 +172,6 @@
     flex-direction: column;
   }
 
-  .control-summary-grid,
   .control-parameter-grid {
     grid-template-columns: 1fr;
   }

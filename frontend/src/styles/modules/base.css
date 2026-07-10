@@ -49,7 +49,7 @@
 
   /* Stage geometry shared by layout.css and App.tsx (dock tween) */
   --topbar-h: 58px;
-  --rail-w: 280px;
+  --rail-w: 304px;
   --dock-h: 380px;
   --dock-handle-h: 42px;
 
