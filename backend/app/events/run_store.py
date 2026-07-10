@@ -209,6 +209,29 @@ class RunStore:
         except (json.JSONDecodeError, OSError):
             return None
 
+    # ---- layer telemetry ----
+
+    def layer_snapshots_dir(self, run_id: str) -> Path:
+        directory = self.run_dir(run_id) / "layer_snapshots"
+        directory.mkdir(exist_ok=True)
+        return directory
+
+    def save_layer_snapshot(self, run_id: str, step: int, layers: list[dict[str, Any]]) -> str:
+        path = self.layer_snapshots_dir(run_id) / f"step_{step:04d}.json"
+        path.write_text(json.dumps({"layers": layers}, ensure_ascii=False), encoding="utf-8")
+        return str(path.relative_to(runs_dir()))
+
+    def load_layer_snapshot(self, run_id: str, step: int) -> list[dict[str, Any]]:
+        path = self.layer_snapshots_dir(run_id) / f"step_{step:04d}.json"
+        if not path.exists():
+            return []
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        layers = payload.get("layers")
+        return layers if isinstance(layers, list) else []
+
     # ---- probe samples ----
 
     def save_samples(self, run_id: str, data: bytes) -> Path:

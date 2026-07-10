@@ -6,6 +6,9 @@ import imagePreviewSource from "./components/ImagePreview.tsx?raw";
 import inferenceProbeSource from "./components/InferenceProbe.tsx?raw";
 import modelGraphSource from "./components/ModelGraphPanel.tsx?raw";
 import runDetailPanelSource from "./components/RunDetailPanel.tsx?raw";
+import runDetailSectionsSource from "./components/RunDetailSections.tsx?raw";
+import runDetailSharedSource from "./components/RunDetailShared.tsx?raw";
+import runReportSource from "./components/RunReportView.tsx?raw";
 import historyPageSource from "./components/HistoryPage.tsx?raw";
 import chartsSource from "./components/Charts.tsx?raw";
 import apiHttpSource from "./api/http.ts?raw";
@@ -22,6 +25,8 @@ import graphPortsSource from "./lib/graphPorts.ts?raw";
 import graphStylesSource from "./styles/modules/graph.css?raw";
 import panelStylesSource from "./styles/modules/panels.css?raw";
 import apiTypesSource from "./api/types.ts?raw";
+import diagnosticsTraySource from "./components/DiagnosticsTray.tsx?raw";
+import telemetryPanelSource from "./components/TelemetryPanel.tsx?raw";
 
 describe("App workspace layout", () => {
   it("keeps layer details out of the control rail", () => {
@@ -101,9 +106,9 @@ describe("App workspace layout", () => {
     expect(appSource).toContain("preferredResourceEntry");
     expect(controlRailSource).not.toContain("resource-samples");
     expect(controlRailSource).not.toContain("ImagePreview");
-    expect(runDetailPanelSource).toContain("displayClassName");
-    expect(runDetailPanelSource).toContain("image_shape");
-    expect(runDetailPanelSource).toContain("prediction_name");
+    expect(runDetailSharedSource).toContain("displayClassName");
+    expect(runReportSource).toContain("image_shape");
+    expect(runReportSource).toContain("prediction_name");
   });
 
   it("keeps vision task metadata out of the control surface", () => {
@@ -133,18 +138,24 @@ describe("App workspace layout", () => {
     expect(apiHttpSource).toContain("/report/export.md");
     expect(apiHttpSource).toContain("runReportHtmlUrl");
     expect(apiHttpSource).toContain("/report/export.html");
-    expect(runDetailPanelSource).toContain("Download report");
-    expect(runDetailPanelSource).toContain("Printable HTML");
-    expect(runDetailPanelSource).toContain("Print / PDF");
+    expect(runReportSource).toContain("Download report");
+    expect(runReportSource).toContain("Printable HTML");
+    expect(runReportSource).toContain("Print / PDF");
     expect(runDetailPanelSource).toContain("window.open");
-    expect(runDetailPanelSource).toContain("Copy link");
+    expect(runReportSource).toContain("Copy link");
     expect(runDetailPanelSource).toContain("navigator.clipboard.writeText");
   });
 
+  it("does not cancel the run report request when loading begins", () => {
+    expect(runDetailPanelSource).toContain("const reportAvailable = Boolean");
+    expect(runDetailPanelSource).toContain("[report, reportAvailable, runId, tab]");
+    expect(runDetailPanelSource).not.toContain('report || reportLoading ||');
+  });
+
   it("renders detection report evidence with the shared image overlay", () => {
-    expect(runDetailPanelSource).toContain("evidenceDetection(sample)");
-    expect(runDetailPanelSource).toContain("Checkpoint detections for sample");
-    expect(runDetailPanelSource).toContain("report.detection_analysis.evidence");
+    expect(runDetailSharedSource).toContain("evidenceDetection(sample)");
+    expect(runDetailSharedSource).toContain("Checkpoint detections for sample");
+    expect(runReportSource).toContain("report.detection_analysis.evidence");
   });
 
   it("makes training steps configurable from the main workflow", () => {
@@ -165,6 +176,30 @@ describe("App workspace layout", () => {
     expect(chartsSource).toContain("hideOverlap: true");
     expect(chartsSource).toContain("legend:");
     expect(chartsSource).toContain("top: 2");
+  });
+
+  it("prioritizes grouped telemetry and demotes raw runtime events into diagnostics", () => {
+    expect(appSource).toContain("TelemetryPanel");
+    expect(appSource).toContain("DiagnosticsTray");
+    expect(appSource).not.toContain("Runtime Events");
+    expect(telemetryPanelSource).toContain("Optimization");
+    expect(telemetryPanelSource).toContain("Quality");
+    expect(telemetryPanelSource).toContain("Infra");
+    expect(telemetryPanelSource).toContain("etaSec");
+    expect(diagnosticsTraySource).toContain("No warnings or failures");
+    expect(diagnosticsTraySource).not.toContain("layer_snapshot");
+    expect(appSource).toContain('type DockSize = "compact" | "standard" | "expanded"');
+    expect(appSource).toContain("dock-size-control");
+    expect(apiTypesSource).toContain('type: "run_status"');
+    expect(appSource).toContain("progress={stream.progress}");
+  });
+
+  it("can cancel the active local training run and blocks duplicate starts", () => {
+    expect(apiHttpSource).toContain("cancelRun");
+    expect(apiHttpSource).toContain("/cancel");
+    expect(appSource).toContain("handleCancelRun");
+    expect(appSource).toContain('currentRunKind === "resource-training" && stream.status === "streaming"');
+    expect(telemetryPanelSource).toContain("onCancel");
   });
 
   it("centralizes GSAP motion decisions", () => {
@@ -195,11 +230,22 @@ describe("App workspace layout", () => {
   });
 
   it("adds report navigation and confusion drilldown", () => {
-    expect(runDetailPanelSource).toContain("report-nav");
-    expect(runDetailPanelSource).toContain("Summary");
-    expect(runDetailPanelSource).toContain("Layer Health");
+    expect(runReportSource).toContain("report-nav");
+    expect(runReportSource).toContain("Summary");
+    expect(runReportSource).toContain("Layer Health");
     expect(runDetailPanelSource).toContain("selectedConfusion");
-    expect(runDetailPanelSource).toContain("misclassified.filter");
+    expect(runReportSource).toContain("misclassified.filter");
+  });
+
+  it("turns live run detail into a polling focus workspace", () => {
+    expect(runDetailPanelSource).toContain("POLL_MS");
+    expect(runDetailPanelSource).toContain("shouldPollRunDetail");
+    expect(runDetailPanelSource).toContain("RunDetailMetricsView");
+    expect(runDetailPanelSource).toContain("RunDetailLayersView");
+    expect(runDetailPanelSource).toContain("RunDetailArtifactsView");
+    expect(runDetailPanelSource).toContain("RunDetailEventLogView");
+    expect(runDetailSectionsSource).toContain("detail-config-disclosure");
+    expect(runReportSource).toContain("report-export-menu");
   });
 
   it("derives operator health from layer snapshots", () => {

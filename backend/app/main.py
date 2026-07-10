@@ -8,7 +8,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import torch
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -18,6 +18,8 @@ from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from app.api.routes_runs import create_runs_router
 from app.events.run_registry import run_registry
 from app.events.run_store import RunStore
+from app.events.training_control import training_task_controller
+from app.events.training_events import aggregate_layer_snapshot, build_run_event as _run_event, publish_run_status, save_run_config
 from app.events.training_stream import demo_training_events, to_sse
 from app.inspector.fingerprint import fingerprint_state_dict
 from app.inspector.fx_tracer import trace_model_graph
@@ -27,7 +29,8 @@ from app.inspector.safetensors_inspector import inspect_safetensors_file
 from app.inspector.source_analyzer import find_module_classes
 from app.resources.contract import ResourceContractError, image_shape_from_sample, load_training_resource, model_input_from_sample
 from app.runtime.model_loader import forward_with_model, load_model_from_source, validate_source_against_checkpoint
-from app.runtime.task_runtime import TaskRuntimeError, resolve_task_runtime
+from app.runtime.resource_training import run_resource_training_job
+from app.runtime.task_runtime import TaskRuntimeError
 from app.reports.analyzer import build_run_report
 from app.reports.markdown import render_run_report_html, render_run_report_markdown
 from app.runtime.demo_mlp import demo_graph, run_demo_forward, sample_digit
@@ -56,6 +59,7 @@ MAX_SOURCE_UPLOAD_BYTES = 20 * 1024 * 1024
 ALLOWED_SOURCE_SUFFIXES = {".py", ".json", ".png", ".jpg", ".jpeg"}
 GRAPH_NODE_BUDGET = 80
 GROUPED_GRAPH_NODE_BUDGET = 24
+MAX_LIVE_LAYER_SAMPLES = 8
 
 app.add_middleware(
     CORSMiddleware,
@@ -336,41 +340,6 @@ async def _collect_source_files(files: list[UploadFile]) -> list[UploadedSourceF
     return collected
 
 
-RunEventType = Literal[
-    "metric",
-    "layer_snapshot",
-    "infra",
-    "checkpoint",
-    "animation",
-    "graph",
-    "source_registered",
-    "config_registered",
-    "graph_registered",
-    "run_complete",
-]
-RunEventSource = Literal["training", "runtime_hook", "checkpoint", "infra", "plugin", "animation"]
-
-
-def _run_event(
-    run_id: str,
-    event_type: RunEventType,
-    source: RunEventSource,
-    step: int,
-    payload: dict,
-    layer: str | None = None,
-) -> RunEvent:
-    return RunEvent(
-        event_id=str(uuid.uuid4()),
-        ts_ns=time.time_ns(),
-        source=source,
-        type=event_type,
-        run_id=run_id,
-        step=step,
-        layer=layer,
-        payload=payload,
-    )
-
-
 def _find_example_input(model: torch.nn.Module) -> torch.Tensor | None:
     for shape in ([1, 1, 28, 28], [1, 3, 32, 32], [1, 784], [1, 10]):
         candidate = torch.rand(*shape)
@@ -515,23 +484,17 @@ def _publish_source_training_events(
                 },
             ),
         ]
-        for layer in layers_lookup.get(step, []):
-            layer_id = layer.get("layer_id")
-            if isinstance(layer_id, str):
-                events.append(
-                    _run_event(
-                        run_id,
-                        "layer_snapshot",
-                        "runtime_hook",
-                        step,
-                        {
-                            "activation_mean": layer.get("activation_mean"),
-                            "activation_sparsity": layer.get("activation_sparsity"),
-                            "weight_std": layer.get("weight_std"),
-                        },
-                        layer=layer_id,
-                    )
+        layers = layers_lookup.get(step, [])
+        if layers:
+            events.append(
+                aggregate_layer_snapshot(
+                    run_store,
+                    run_id,
+                    step,
+                    layers,
+                    max_live_layer_samples=MAX_LIVE_LAYER_SAMPLES,
                 )
+            )
         run_registry.publish(run_id, events)
         if SOURCE_TRAIN_EVENT_INTERVAL_SEC:
             time.sleep(SOURCE_TRAIN_EVENT_INTERVAL_SEC)
@@ -687,136 +650,6 @@ def _resource_preview_samples(resource, limit: int = RESOURCE_PREVIEW_SAMPLE_LIM
     return samples
 
 
-def _resource_probe_samples(resource, limit: int) -> tuple[torch.Tensor, object, str]:
-    images: list[torch.Tensor] = []
-    targets: list[object] = []
-    for index in range(limit):
-        image, target = resource.inference_sample(index)
-        images.append(_as_model_input(image))
-        targets.append(target)
-    return (
-        torch.cat(images, dim=0).detach().cpu(),
-        resource.runtime.pack_probe_targets(targets),
-        resource.sample_source,
-    )
-
-
-def _run_resource_training_job(
-    run_id: str,
-    source_path: Path,
-    source_root: Path,
-    graph,
-    steps: int,
-    telemetry_stride: int,
-) -> None:
-    try:
-        resource = load_training_resource(source_path, source_root=source_root)
-    except ResourceContractError as exc:
-        run_registry.publish(
-            run_id,
-            [
-                _run_event(
-                    run_id,
-                    "run_complete",
-                    "training",
-                    0,
-                    {"status": "failed", "run_kind": "resource-training", "error": str(exc)},
-                )
-            ],
-        )
-        return
-
-    model = resource.build_model()
-    runtime = resolve_task_runtime(resource.task)
-    runtime.ensure_training_supported()
-    batch_size = max(1, min(resource.batch_size, 64))
-    learning_rate = resource.learning_rate
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    metrics: list[dict] = []
-    layers_by_step: list[tuple[int, list[dict]]] = []
-    start = time.perf_counter()
-    probe_images, probe_targets, sample_source = _resource_probe_samples(resource, min(64, batch_size))
-
-    model.train()
-    for step in range(1, steps + 1):
-        images, labels = resource.train_batch(step, batch_size)
-        step_start = time.perf_counter()
-        step_result = runtime.training_step(model, images, labels, optimizer)
-        step_time_ms = (time.perf_counter() - step_start) * 1000
-        should_record = step % telemetry_stride == 0 or step == steps
-        if should_record:
-            model.eval()
-            telemetry_images = probe_images if resource.task == "detection" else images
-            telemetry_targets = probe_targets if resource.task == "detection" else labels
-            telemetry = runtime.telemetry_snapshot(model, telemetry_images, telemetry_targets)
-            model.train()
-            metrics.append(
-                {
-                    "step": step,
-                    "loss": round(step_result.loss, 4),
-                    **{name: round(value, 4) for name, value in step_result.metrics.items()},
-                    **{name: round(value, 4) for name, value in telemetry.metrics.items()},
-                    "learning_rate": learning_rate,
-                    "step_time_ms": round(step_time_ms, 2),
-                    "samples_per_sec": round(batch_size / max(step_time_ms / 1000, 1e-6), 1),
-                    "elapsed_sec": round(time.perf_counter() - start, 2),
-                }
-            )
-            layers_by_step.append((step, telemetry.layers))
-
-    run_store.save_config(
-        run_id,
-        {
-            "source": "training-resource",
-            "run_kind": "resource-training",
-            "resource_name": resource.name,
-            "task": resource.task,
-            "inference_only": False,
-            "training_status": "completed",
-            "training_recipe": "resource-contract",
-            "steps": steps,
-            "telemetry_stride": telemetry_stride,
-            "batch_size": batch_size,
-            "lr": learning_rate,
-            "entry_file": run_store.load_entry_meta(run_id)["entry_file"] if run_store.load_entry_meta(run_id) else None,
-            "entry_class": run_store.load_entry_class(run_id),
-            "input_shape": resource.input_shape,
-            "classes": resource.classes,
-            "class_names": resource.class_names,
-            "dataset_spec": resource.dataset_spec,
-            "output_schema": resource.output_schema,
-            "metric_schema": resource.metric_schema,
-            "data_source": resource.metadata.get("data_source"),
-            "sample_source": resource.sample_source,
-            "weights": "trained",
-        },
-    )
-
-    sample = io.BytesIO()
-    target_key = "labels" if resource.task == "classification" else "targets"
-    torch.save(
-        {"images": probe_images, target_key: probe_targets, "sample_source": sample_source, "task": resource.task},
-        sample,
-    )
-    run_store.save_samples(run_id, sample.getvalue())
-
-    checkpoint = io.BytesIO()
-    torch.save(model.state_dict(), checkpoint)
-    checkpoint_path = run_store.save_checkpoint_bytes(run_id, steps, checkpoint.getvalue(), epoch=1)
-    fingerprint = fingerprint_state_dict(model.state_dict())
-    run_store.record_fingerprint(run_id, checkpoint_path.name, fingerprint)
-
-    _publish_source_training_events(
-        run_id,
-        graph,
-        metrics,
-        layers_by_step,
-        checkpoint_path,
-        fingerprint,
-        run_kind="resource-training",
-    )
-
-
 @app.post("/api/runs/train-resource")
 async def train_run_from_resource(
     background_tasks: BackgroundTasks,
@@ -855,36 +688,57 @@ async def train_run_from_resource(
 
     steps = max(1, min(int(steps), 500))
     telemetry_stride = max(1, min(int(telemetry_stride), steps))
-    run_store.save_config(
+    save_run_config(
+        run_store,
         run_id,
-        {
-            "source": "training-resource",
-            "run_kind": "resource-training",
-            "resource_name": resource.name,
-            "task": resource.task,
-            "inference_only": False,
-            "training_status": "running",
-            "training_recipe": "resource-contract",
-            "steps": steps,
-            "telemetry_stride": telemetry_stride,
-            "batch_size": resource.batch_size,
-            "lr": resource.learning_rate,
-            "entry_file": normalized_entry,
-            "entry_class": "TrainingResource",
-            "input_shape": resource.input_shape,
-            "classes": resource.classes,
-            "class_names": resource.class_names,
-            "dataset_spec": resource.dataset_spec,
-            "output_schema": resource.output_schema,
-            "metric_schema": resource.metric_schema,
-            "data_source": resource.metadata.get("data_source"),
-            "sample_source": resource.sample_source,
-            "weights": "training",
-        },
+        source="training-resource",
+        run_kind="resource-training",
+        resource_name=resource.name,
+        task=resource.task,
+        inference_only=False,
+        training_status="queued",
+        training_recipe="resource-contract",
+        steps=steps,
+        telemetry_stride=telemetry_stride,
+        batch_size=resource.batch_size,
+        lr=resource.learning_rate,
+        entry_file=normalized_entry,
+        entry_class="TrainingResource",
+        input_shape=resource.input_shape,
+        classes=resource.classes,
+        class_names=resource.class_names,
+        dataset_spec=resource.dataset_spec,
+        output_schema=resource.output_schema,
+        metric_schema=resource.metric_schema,
+        data_source=resource.metadata.get("data_source"),
+        sample_source=resource.sample_source,
+        weights="training",
+        cancel_requested=False,
     )
     run_store.save_graph(run_id, graph.model_dump())
+    state = training_task_controller.register(run_id)
     run_registry.publish(run_id, [_run_event(run_id, "graph", "training", 0, {"graph": graph.model_dump()})])
-    background_tasks.add_task(_run_resource_training_job, run_id, source_path, source_root, graph, steps, telemetry_stride)
+    publish_run_status(
+        run_registry,
+        run_id,
+        "queued",
+        "Training queued for execution.",
+        total_steps=steps,
+        progress=0.0,
+        extra={"queue_position": state.queue_position},
+    )
+    background_tasks.add_task(
+        run_resource_training_job,
+        run_id,
+        source_path,
+        source_root,
+        steps,
+        telemetry_stride,
+        run_store=run_store,
+        run_registry=run_registry,
+        training_task_controller=training_task_controller,
+        max_live_layer_samples=MAX_LIVE_LAYER_SAMPLES,
+    )
     return {
         "run_id": run_id,
         "run_kind": "resource-training",
@@ -1228,6 +1082,36 @@ def get_run_graph(run_id: str):
 @app.get("/api/runs/{run_id}/checkpoints")
 def list_run_checkpoints(run_id: str):
     return run_store.list_checkpoints(run_id)
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_run(run_id: str):
+    state = training_task_controller.request_cancel(run_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Run not found or not cancellable.")
+    save_run_config(run_store, run_id, training_status=state.phase, cancel_requested=True)
+    config = run_store.load_config(run_id) or {}
+    total_steps = int(config.get("steps") or 0)
+    last_step = int(config.get("last_step") or 0)
+    progress = (last_step / total_steps) if total_steps else 0.0
+    if not state.completed:
+        publish_run_status(
+            run_registry,
+            run_id,
+            "cancelling",
+            "Cancellation requested.",
+            step=last_step,
+            total_steps=total_steps or None,
+            progress=progress,
+            extra={"queue_position": state.queue_position},
+        )
+    return {
+        "run_id": run_id,
+        "cancel_requested": True,
+        "phase": state.phase,
+        "completed": state.completed,
+        "queue_position": state.queue_position,
+    }
 
 
 @app.get("/api/runs/{run_id}/forward")

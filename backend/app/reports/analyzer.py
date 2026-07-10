@@ -129,7 +129,16 @@ def _layer_health(store: RunStore, run_id: str) -> list[LayerHealth]:
     events = store.load_events(run_id)
     by_layer: dict[str, list[dict[str, Any]]] = {}
     for event in events:
-        if event.type == "layer_snapshot" and event.layer:
+        if event.type != "layer_snapshot":
+            continue
+        if event.payload.get("mode") == "aggregate":
+            expanded = store.load_layer_snapshot(run_id, event.step)
+            for layer in expanded:
+                layer_id = layer.get("layer_id")
+                if isinstance(layer_id, str):
+                    by_layer.setdefault(layer_id, []).append(layer)
+            continue
+        if event.layer:
             by_layer.setdefault(event.layer, []).append(event.payload)
 
     health: list[LayerHealth] = []

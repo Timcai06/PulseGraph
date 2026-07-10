@@ -220,6 +220,7 @@ class RunEvent(BaseModel):
     ts_ns: int
     source: Literal["training", "runtime_hook", "checkpoint", "infra", "plugin", "animation"]
     type: Literal[
+        "run_status",
         "metric",
         "layer_snapshot",
         "infra",

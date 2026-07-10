@@ -75,4 +75,79 @@ describe("applyStreamEvent", () => {
       samples_per_sec: 144
     });
   });
+
+  it("tracks lifecycle progress separately from metric points", () => {
+    const next = applyStreamEvent(createInitialStreamState(), {
+      event_id: "status-12",
+      schema_version: "1",
+      ts_ns: 1,
+      source: "training",
+      run_id: "run-1",
+      step: 12,
+      type: "run_status",
+      layer: null,
+      payload: {
+        phase: "training",
+        message: "Training step 12 of 100",
+        step: 12,
+        total_steps: 100,
+        progress: 0.12,
+        elapsed_sec: 4,
+        eta_sec: 29
+      }
+    });
+
+    expect(next.progress).toEqual({
+      phase: "training",
+      message: "Training step 12 of 100",
+      step: 12,
+      totalSteps: 100,
+      progress: 0.12,
+      elapsedSec: 4,
+      etaSec: 29
+    });
+    expect(next.metrics).toEqual([]);
+  });
+
+  it("expands one aggregate layer event into sampled node snapshots", () => {
+    const next = applyStreamEvent(createInitialStreamState(), {
+      event_id: "layers-5",
+      schema_version: "1",
+      ts_ns: 1,
+      source: "runtime_hook",
+      run_id: "run-1",
+      step: 5,
+      type: "layer_snapshot",
+      layer: "__aggregate__",
+      payload: {
+        mode: "aggregate",
+        layer_count: 125,
+        layers: [
+          { layer_id: "backbone.0", activation_mean: 0.2, gradient_norm: 1.4 },
+          { layer_id: "head", activation_sparsity: 0.6, gradient_norm: 0.8 }
+        ]
+      }
+    });
+
+    expect(Object.keys(next.layerSnapshots)).toEqual(["backbone.0", "head"]);
+    expect(next.layerHistory["backbone.0"]).toEqual([{ step: 5, activation_mean: 0.2, gradient_norm: 1.4 }]);
+    expect(next.pulsedNodeId).toBe("backbone.0");
+  });
+
+  it("surfaces failed completion as an error state", () => {
+    const next = applyStreamEvent(createInitialStreamState(), {
+      event_id: "failed",
+      schema_version: "1",
+      ts_ns: 1,
+      source: "training",
+      run_id: "run-1",
+      step: 8,
+      type: "run_complete",
+      layer: null,
+      payload: { status: "failed", error: "out of memory" }
+    });
+
+    expect(next.status).toBe("error");
+    expect(next.progress).toMatchObject({ phase: "failed", step: 8 });
+  });
 });

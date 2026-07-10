@@ -113,6 +113,17 @@ export type LayerSnapshotPayload = {
   activation_sparsity?: number | null;
   gradient_norm?: number | null;
   weight_std?: number | null;
+  mode?: "aggregate" | string;
+  layer_count?: number | null;
+  sampled_layer_count?: number | null;
+  detail_path?: string | null;
+  layers?: Array<{
+    layer_id?: string | null;
+    activation_mean?: number | null;
+    activation_sparsity?: number | null;
+    gradient_norm?: number | null;
+    weight_std?: number | null;
+  }> | null;
 };
 
 export type InfraPayload = {
@@ -139,6 +150,16 @@ export type GraphPayload = {
   tensors?: { name: string; shape: number[] }[] | null;
 };
 
+export type RunStatusPayload = {
+  phase?: "queued" | "loading" | "building" | "training" | "checkpointing" | "completed" | "cancelled" | "failed" | string;
+  message?: string | null;
+  step?: number | null;
+  total_steps?: number | null;
+  progress?: number | null;
+  elapsed_sec?: number | null;
+  eta_sec?: number | null;
+};
+
 type RunEventBase = {
   event_id: string;
   schema_version: string;
@@ -161,6 +182,7 @@ export type RunEvent =
   | (RunEventBase & { type: "source_registered"; payload: Record<string, unknown> })
   | (RunEventBase & { type: "config_registered"; payload: Record<string, unknown> })
   | (RunEventBase & { type: "graph_registered"; payload: Record<string, unknown> })
+  | (RunEventBase & { type: "run_status"; payload: RunStatusPayload })
   | (RunEventBase & { type: "run_complete"; payload: Record<string, unknown> });
 
 export type RunEventType = RunEvent["type"];

@@ -31,6 +31,15 @@ describe("ControlRail", () => {
     expect(controlRailSource).toContain("webkitRelativePath");
   });
 
+  it("routes training parameters through the draft-aware numeric field", () => {
+    expect(controlRailSource).toContain('import { NumericField } from "./NumericField"');
+    expect(controlRailSource).toContain('<NumericField label="Training Steps"');
+    expect(controlRailSource).toContain('onCommit={onTrainingStepsChange}');
+    expect(controlRailSource).toContain('<NumericField label="Telemetry Stride"');
+    expect(controlRailSource).toContain('onCommit={onTelemetryStrideChange}');
+    expect(controlRailSource).not.toContain('type="number"');
+  });
+
   it("keeps a bounded live-run preview inside a collapsed surface", () => {
     expect(controlRailSource).toContain("control-disclosure");
     expect(controlRailSource).toContain("Live runs");

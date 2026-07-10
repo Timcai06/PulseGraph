@@ -229,16 +229,29 @@
 
   .dock-panels {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 
-  .dock-panels > div + div {
+  .prediction-panel {
     border-left: 0;
     border-top: 1px solid rgba(148, 163, 184, 0.1);
   }
 
-  .event-panel {
-    display: grid;
-    min-height: 220px;
+  .telemetry-vitals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .telemetry-vitals > span:nth-child(3) {
+    border-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.08);
+  }
+
+  .telemetry-vitals > span:nth-child(4) {
+    border-top: 1px solid rgba(148, 163, 184, 0.08);
+  }
+
+  .diagnostics-tray {
+    grid-column: 1;
   }
 
   /* no hover on touch: drop the cursor preview, keep the draggable strip */

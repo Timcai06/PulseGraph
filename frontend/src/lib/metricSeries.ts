@@ -14,7 +14,10 @@ export type MetricSeriesSpec = {
 export type MetricSeriesContext = {
   task?: string;
   metricSchema?: MetricSchema | null;
+  group?: MetricGroup;
 };
+
+export type MetricGroup = "quality" | "optimization" | "infra";
 
 export type PrimaryMetricSignal = {
   key: string;
@@ -29,6 +32,8 @@ const READABLE_LABELS: Record<string, string> = {
   loss_box_reg: "Loss box reg",
   loss_classifier: "Loss classifier",
   mean_iou: "Mean IoU",
+  memory_peak_mb: "Memory MB",
+  samples_per_sec: "Samples / sec",
   step_time_ms: "Step ms"
 };
 
@@ -36,6 +41,8 @@ const METRIC_TONES: Record<string, MetricSeriesTone> = {
   loss: "amber",
   accuracy: "green",
   mean_iou: "green",
+  samples_per_sec: "green",
+  memory_peak_mb: "violet",
   step_time_ms: "cyan",
   loss_classifier: "violet",
   loss_box_reg: "red"
@@ -148,7 +155,16 @@ export function deriveMetricSeries(points: MetricPoint[], context: MetricSeriesC
         ? DETECTION_SERIES.filter((key) => hasMetric(points, key))
         : genericSeriesKeys(points, context);
 
-  return keys.slice(0, 5).map((key) => ({
+  const groupedKeys = context.group === "quality"
+    ? keys.filter((key) => key === "accuracy" || key === "mean_iou")
+    : context.group === "optimization"
+      ? keys.filter((key) => key === "loss" || key.startsWith("loss_") || key === "learning_rate")
+      : context.group === "infra"
+        ? ["step_time_ms", "samples_per_sec", "memory_peak_mb"].filter((key) => hasMetric(points, key))
+        : keys;
+
+  const visibleKeys = context.group ? groupedKeys : keys;
+  return visibleKeys.slice(0, 5).map((key) => ({
     key,
     label: metricLabel(key),
     tone: metricTone(key),

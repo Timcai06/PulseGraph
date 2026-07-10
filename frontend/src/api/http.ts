@@ -53,6 +53,15 @@ export async function deleteRun(runId: string): Promise<{ run_id: string; delete
   return response.json();
 }
 
+export async function cancelRun(runId: string): Promise<{ run_id: string; cancel_requested: boolean; phase: string }> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+  if (!response.ok) {
+    const detail = await response.json().then((body) => body?.detail).catch(() => undefined);
+    throw new Error(typeof detail === "string" ? detail : "Cancelling the run failed");
+  }
+  return response.json();
+}
+
 export async function getRunDetail(runId: string): Promise<RunDetail> {
   const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/detail`);
   if (!response.ok) throw new Error("Failed to load run detail");

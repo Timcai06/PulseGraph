@@ -6,6 +6,7 @@ import { useReducedMotion } from "../hooks/useReducedMotion";
 import type { MetricPoint, StreamStatus } from "../hooks/useRunStream";
 import type { MetricSchema } from "../api/types";
 import { deriveMetricSeries, metricValue } from "../lib/metricSeries";
+import type { MetricGroup } from "../lib/metricSeries";
 
 export type { MetricPoint };
 
@@ -36,6 +37,7 @@ type MetricsProps = {
   task?: string;
   metricSchema?: MetricSchema | null;
   selectedStep?: number;
+  group?: MetricGroup;
 };
 
 function emptyMetricMessage(status: StreamStatus, runKind?: string) {
@@ -48,16 +50,22 @@ function emptyMetricMessage(status: StreamStatus, runKind?: string) {
   return "Run training or watch a recorded training run to populate telemetry.";
 }
 
-export function MetricChart({ points, status = "idle", theme = "dark", runKind, task, metricSchema, selectedStep }: MetricsProps) {
+function emptyGroupMessage(group?: MetricGroup) {
+  if (group === "quality") return "Quality metrics will appear at the next telemetry stride.";
+  if (group === "infra") return "Infrastructure timing and throughput have not arrived yet.";
+  return "Waiting for optimization metrics from the current run.";
+}
+
+export function MetricChart({ points, status = "idle", theme = "dark", runKind, task, metricSchema, selectedStep, group }: MetricsProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useChart(ref);
   const reducedMotion = useReducedMotion();
+  const seriesSpecs = useMemo(() => deriveMetricSeries(points, { task, metricSchema, group }), [group, metricSchema, points, task]);
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const palette = chartPalette();
-    const seriesSpecs = deriveMetricSeries(points, { task, metricSchema });
     const area = (color: string) => ({
       color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
         { offset: 0, color: withAlpha(color, 0.22) },
@@ -77,6 +85,7 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
         textStyle: { color: palette.text },
         tooltip: {
           trigger: "axis",
+          axisPointer: { type: "cross", label: { backgroundColor: palette.tooltipBg } },
           backgroundColor: palette.tooltipBg,
           borderColor: palette.grid,
           textStyle: { color: palette.text }
@@ -89,6 +98,7 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
           textStyle: { color: palette.text, fontSize: 11 }
         },
         grid: { left: 42, right: 24, top: 52, bottom: 44, containLabel: true },
+        dataZoom: points.length > 30 ? [{ type: "inside", xAxisIndex: 0, start: Math.max(0, 100 - (30 / points.length) * 100), end: 100 }] : [],
         xAxis: {
           type: "category",
           data: points.map((point) => point.step),
@@ -132,14 +142,14 @@ export function MetricChart({ points, status = "idle", theme = "dark", runKind, 
       },
       { notMerge: true }
     );
-  }, [chartRef, metricSchema, points, reducedMotion, selectedStep, task, theme]);
+  }, [chartRef, points, reducedMotion, selectedStep, seriesSpecs, theme]);
 
   return (
     <div className="chart-wrap">
       <div className="chart" ref={ref} />
-      {points.length === 0 && (
+      {(points.length === 0 || seriesSpecs.length === 0) && (
         <div className="chart-empty">
-          {emptyMetricMessage(status, runKind)}
+          {points.length === 0 ? emptyMetricMessage(status, runKind) : emptyGroupMessage(group)}
         </div>
       )}
     </div>

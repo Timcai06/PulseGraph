@@ -26,6 +26,24 @@ async def demo_training_events(run_id: str = "demo-run", steps: int = 80) -> Asy
             event_id=str(uuid.uuid4()),
             ts_ns=time.time_ns(),
             source="training",
+            type="run_status",
+            run_id=run_id,
+            step=step,
+            epoch=epoch,
+            payload={
+                "phase": "training",
+                "message": f"Training step {step}/{steps}",
+                "step": step,
+                "total_steps": steps,
+                "elapsed_sec": round(elapsed, 2),
+                "eta_sec": round((elapsed / step) * max(steps - step, 0), 2),
+                "progress": round(step / steps, 4),
+            },
+        )
+        yield RunEvent(
+            event_id=str(uuid.uuid4()),
+            ts_ns=time.time_ns(),
+            source="training",
             type="metric",
             run_id=run_id,
             step=step,
@@ -97,6 +115,24 @@ async def demo_training_events(run_id: str = "demo-run", steps: int = 80) -> Asy
             },
         )
         await asyncio.sleep(0.08)
+
+    yield RunEvent(
+        event_id=str(uuid.uuid4()),
+        ts_ns=time.time_ns(),
+        source="training",
+        type="run_status",
+        run_id=run_id,
+        step=steps,
+        epoch=1 + (steps - 1) // 25,
+        payload={
+            "phase": "completed",
+            "message": "Training completed.",
+            "step": steps,
+            "total_steps": steps,
+            "elapsed_sec": round(time.perf_counter() - start, 2),
+            "progress": 1.0,
+        },
+    )
 
     yield RunEvent(
         event_id=str(uuid.uuid4()),

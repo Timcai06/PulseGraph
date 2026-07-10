@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Maximize2, Minimize2, PanelTopOpen } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import type {
@@ -15,6 +15,7 @@ import type {
 } from "./api/client";
 import {
   deleteRun,
+  cancelRun,
   getDemoModel,
   getHealth,
   getRunDetail,
@@ -26,8 +27,9 @@ import {
 import { TopStatusBar } from "./components/TopStatusBar";
 import { ControlRail } from "./components/ControlRail";
 import { ModelGraphPanel } from "./components/ModelGraphPanel";
-import { MetricChart } from "./components/Charts";
 import { InferenceProbe } from "./components/InferenceProbe";
+import { DiagnosticsTray } from "./components/DiagnosticsTray";
+import { TelemetryPanel } from "./components/TelemetryPanel";
 import { RunDetailPanel } from "./components/RunDetailPanel";
 import { HistoryPage } from "./components/HistoryPage";
 import { StageStats } from "./components/StageStats";
@@ -97,6 +99,7 @@ type SourceRecipe = {
 };
 
 type CurrentRunKind = "resource-training" | "source-training" | "recorded-training";
+type DockSize = "compact" | "standard" | "expanded";
 
 function preferredResourceEntry(files: NamedSourceFile[]): string | undefined {
   return files.find((file) => file.path === "resource.py" || file.path.endsWith("/resource.py"))?.path ?? files[0]?.path;
@@ -110,6 +113,7 @@ export default function App() {
   const [prediction, setPrediction] = useState<PredictionResponse | undefined>();
   const [liveRuns, setLiveRuns] = useState<RunSummary[]>([]);
   const [busy, setBusy] = useState<"resource" | "train" | "forward" | undefined>();
+  const [cancellingRunId, setCancellingRunId] = useState<string | undefined>();
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [detailRunId, setDetailRunId] = useState<string | undefined>();
   const [detailInitialTab, setDetailInitialTab] = useState<"overview" | "source">("overview");
@@ -125,6 +129,7 @@ export default function App() {
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
   const [dockOpen, setDockOpen] = useState(false);
+  const [dockSize, setDockSize] = useState<DockSize>("standard");
   const [forwardTick, setForwardTick] = useState(0);
   const [selectedTimelineStep, setSelectedTimelineStep] = useState<number | undefined>();
   const [ghostEdges, setGhostEdges] = useState<GhostEdge[]>([]);
@@ -184,7 +189,7 @@ export default function App() {
         gsap.to(dock, { y, duration: motionDuration("drawer", reducedMotion), ease: motionEase.panel });
       }
     },
-    { dependencies: [dockOpen, page, reducedMotion], scope: shellRef }
+    { dependencies: [dockOpen, dockSize, page, reducedMotion], scope: shellRef }
   );
 
   useEffect(() => {
@@ -376,7 +381,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (stream.status !== "complete" || !pendingForwardRun) return;
+    if (!pendingForwardRun) return;
+    if (stream.status === "error" || (stream.status === "complete" && stream.progress?.phase !== "completed")) {
+      setPendingForwardRun(undefined);
+      return;
+    }
+    if (stream.status !== "complete") return;
     let cancelled = false;
     runForward(pendingForwardRun)
       .then((result) => {
@@ -391,7 +401,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pendingForwardRun, stream.status]);
+  }, [pendingForwardRun, stream.progress?.phase, stream.status]);
 
   const handleWatchRun = (runId: string) => {
     setErrorMessage(undefined);
@@ -418,6 +428,20 @@ export default function App() {
       void refreshRuns();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Deleting the run failed.");
+    }
+  };
+
+  const handleCancelRun = async () => {
+    if (!stream.runId || stream.status !== "streaming") return;
+    setCancellingRunId(stream.runId);
+    setErrorMessage(undefined);
+    try {
+      await cancelRun(stream.runId);
+      void refreshRuns();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Cancelling the run failed.");
+    } finally {
+      setCancellingRunId(undefined);
     }
   };
 
@@ -504,7 +528,7 @@ export default function App() {
       <TopStatusBar
         backendStatus={backendStatus}
         runStatus={stream.status}
-        step={latestStep}
+        step={stream.progress?.step ?? latestStep}
         device={stream.device}
         theme={theme}
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
@@ -572,7 +596,7 @@ export default function App() {
               setHistoryMode("live");
               setPage("history");
             }}
-            trainAvailable={Boolean(sourceRecipe)}
+            trainAvailable={Boolean(sourceRecipe) && !(currentRunKind === "resource-training" && stream.status === "streaming")}
             loadedResource={sourceRecipe?.summary}
             trainingSteps={trainingSteps}
             onTrainingStepsChange={(steps) => setTrainingSteps(Math.max(1, Math.min(500, Math.trunc(steps || 1))))}
@@ -586,34 +610,40 @@ export default function App() {
             busy={busy}
             errorMessage={errorMessage}
           />
-          <section className={`bottom-dock ${dockOpen ? "open" : ""}`} ref={dockRef}>
-            <button
-              className="dock-handle"
-              type="button"
-              onClick={() => setDockOpen((open) => !open)}
-              aria-expanded={dockOpen}
-            >
-              <i className={`status-dot ${stream.status === "streaming" ? "streaming" : "idle"}`} />
-              Telemetry
-              <span className="dock-run">{stream.runId ?? ""}</span>
-              {dockOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-            </button>
+          <section className={`bottom-dock dock-${dockSize} ${dockOpen ? "open" : ""}`} ref={dockRef}>
+            <header className="dock-handle">
+              <button className="dock-toggle" type="button" onClick={() => setDockOpen((open) => !open)} aria-expanded={dockOpen}>
+                <i className={`status-dot ${stream.status === "streaming" ? "streaming" : stream.status}`} />
+                Telemetry
+                <span className="dock-run">{stream.runId ?? ""}</span>
+                {dockOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              </button>
+              <div className="dock-size-control" aria-label="Telemetry panel size">
+                <button className={dockSize === "compact" ? "active" : ""} onClick={() => setDockSize("compact")} title="Compact telemetry" type="button" aria-label="Compact telemetry">
+                  <Minimize2 size={14} />
+                </button>
+                <button className={dockSize === "standard" ? "active" : ""} onClick={() => setDockSize("standard")} title="Standard telemetry" type="button" aria-label="Standard telemetry">
+                  <PanelTopOpen size={14} />
+                </button>
+                <button className={dockSize === "expanded" ? "active" : ""} onClick={() => setDockSize("expanded")} title="Expanded telemetry" type="button" aria-label="Expanded telemetry">
+                  <Maximize2 size={14} />
+                </button>
+              </div>
+            </header>
             <div className="dock-panels">
-              <div className="metric-panel">
-                <div className="panel-heading">
-                  <h2>Training Telemetry</h2>
-                  <span>{stream.runId ? stream.runId : ""}</span>
-                </div>
-                <MetricChart
-                  points={stream.metrics}
-                  status={stream.status}
-                  theme={theme}
-                  runKind={currentRunKind}
-                  task={metricTask}
-                  metricSchema={metricSchema}
-                  selectedStep={timelineLive ? undefined : selectedTimelineFrameStep}
-                />
-                <TimelineScrubber
+              <TelemetryPanel
+                points={stream.metrics}
+                progress={stream.progress}
+                runId={stream.runId}
+                status={stream.status}
+                theme={theme}
+                runKind={currentRunKind}
+                task={metricTask}
+                metricSchema={metricSchema}
+                selectedStep={timelineLive ? undefined : selectedTimelineFrameStep}
+                cancelling={cancellingRunId === stream.runId}
+                onCancel={stream.runId ? handleCancelRun : undefined}
+                timeline={<TimelineScrubber
                   frames={timelineFrames}
                   selectedStep={selectedTimelineFrameStep}
                   live={timelineLive}
@@ -621,8 +651,8 @@ export default function App() {
                   onStepChange={handleTimelineStepChange}
                   onLive={() => setSelectedTimelineStep(undefined)}
                   onJumpToStep={handleTimelineStepChange}
-                />
-              </div>
+                />}
+              />
               <div className="prediction-panel">
                 <div className="panel-heading">
                   <h2>Inference Output</h2>
@@ -630,13 +660,8 @@ export default function App() {
                 </div>
                 <InferenceProbe prediction={prediction} theme={theme} />
               </div>
-              <div className="event-panel">
-                <div className="panel-heading">
-                  <h2>Runtime Events</h2>
-                  <span>{timelineLive ? stream.events.length : replayEvents.length}</span>
-                </div>
-                <div className="event-list">
-                  {selectedGhostEdge && (
+              <DiagnosticsTray error={errorMessage} events={timelineLive ? stream.events : replayEvents}>
+                {selectedGhostEdge && (
                     <div className={`composer-ghost-card ghost-${selectedGhostEdge.status}`}>
                       <div>
                         <span>Composer ghost edge</span>
@@ -660,26 +685,8 @@ export default function App() {
                         Remove ghost edge
                       </button>
                     </div>
-                  )}
-                  {errorMessage && (
-                    <div className="event warning">
-                      <i className="event-dot" />
-                      <span className="event-layer">{errorMessage}</span>
-                    </div>
-                  )}
-                  {replayEvents.length === 0 && !errorMessage && (
-                    <p className="empty-hint">No events</p>
-                  )}
-                  {replayEvents.map((event) => (
-                    <div className={`event ${event.type}`} key={event.event_id}>
-                      <i className="event-dot" />
-                      <span className="event-type">{event.type}</span>
-                      {event.layer && <span className="event-layer">{event.layer}</span>}
-                      <span className="event-step">step {event.step}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                )}
+              </DiagnosticsTray>
             </div>
           </section>
         </div>

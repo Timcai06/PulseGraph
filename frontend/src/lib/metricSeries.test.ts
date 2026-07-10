@@ -70,4 +70,28 @@ describe("metricSeries", () => {
     });
     expect(latestMetricValue(points, "f1_score")).toBe(0.82);
   });
+
+  it("separates optimization, quality, and infra metric groups", () => {
+    const points = [point(5, {
+      loss: 1.8,
+      loss_classifier: 0.6,
+      loss_box_reg: 0.3,
+      mean_iou: 0.41,
+      step_time_ms: 25,
+      samples_per_sec: 90,
+      memory_peak_mb: 512
+    })];
+
+    expect(deriveMetricSeries(points, { task: "detection", group: "optimization" }).map((series) => series.key)).toEqual([
+      "loss",
+      "loss_classifier",
+      "loss_box_reg"
+    ]);
+    expect(deriveMetricSeries(points, { task: "detection", group: "quality" }).map((series) => series.key)).toEqual(["mean_iou"]);
+    expect(deriveMetricSeries(points, { task: "detection", group: "infra" }).map((series) => series.key)).toEqual([
+      "step_time_ms",
+      "samples_per_sec",
+      "memory_peak_mb"
+    ]);
+  });
 });

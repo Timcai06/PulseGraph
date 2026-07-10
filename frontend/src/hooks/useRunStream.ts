@@ -22,6 +22,16 @@ export type LayerHistoryPoint = {
   weight_std?: number | null;
 };
 
+export type RunProgress = {
+  phase: string;
+  message?: string;
+  step: number;
+  totalSteps?: number;
+  progress?: number;
+  elapsedSec?: number;
+  etaSec?: number;
+};
+
 const MAX_LAYER_HISTORY = 120;
 
 type StreamState = {
@@ -34,6 +44,7 @@ type StreamState = {
   graph?: ModelGraph;
   pulsedNodeId?: string;
   device: string;
+  progress?: RunProgress;
 };
 
 type StreamAction =
@@ -104,6 +115,35 @@ export function applyStreamEvent(state: StreamState, event: RunEvent): StreamSta
       return next;
     }
     case "layer_snapshot": {
+      if (Array.isArray(event.payload.layers)) {
+        const sampledLayers = event.payload.layers.filter(
+          (layer): layer is typeof layer & { layer_id: string } => typeof layer.layer_id === "string"
+        );
+        next.layerSnapshots = { ...state.layerSnapshots };
+        next.layerHistory = { ...state.layerHistory };
+        for (const layer of sampledLayers) {
+          next.layerSnapshots[layer.layer_id] = {
+            layer_id: layer.layer_id,
+            activation_mean: layer.activation_mean,
+            activation_sparsity: layer.activation_sparsity,
+            gradient_norm: layer.gradient_norm,
+            weight_std: layer.weight_std
+          };
+          const history = state.layerHistory[layer.layer_id] ?? [];
+          next.layerHistory[layer.layer_id] = [
+            ...history,
+            {
+              step: event.step,
+              activation_mean: layer.activation_mean,
+              activation_sparsity: layer.activation_sparsity,
+              gradient_norm: layer.gradient_norm,
+              weight_std: layer.weight_std
+            }
+          ].slice(-MAX_LAYER_HISTORY);
+        }
+        next.pulsedNodeId = sampledLayers[0]?.layer_id;
+        return next;
+      }
       if (!event.layer) return next;
       next.layerSnapshots = {
         ...state.layerSnapshots,
@@ -127,14 +167,41 @@ export function applyStreamEvent(state: StreamState, event: RunEvent): StreamSta
       if (event.payload.graph?.nodes?.length) next.graph = event.payload.graph;
       return next;
     }
+    case "run_status": {
+      const totalSteps = typeof event.payload.total_steps === "number" ? event.payload.total_steps : undefined;
+      const progress = typeof event.payload.progress === "number"
+        ? event.payload.progress
+        : totalSteps
+          ? event.step / totalSteps
+          : undefined;
+      next.progress = {
+        phase: typeof event.payload.phase === "string" ? event.payload.phase : "running",
+        message: typeof event.payload.message === "string" ? event.payload.message : undefined,
+        step: typeof event.payload.step === "number" ? event.payload.step : event.step,
+        totalSteps,
+        progress,
+        elapsedSec: typeof event.payload.elapsed_sec === "number" ? event.payload.elapsed_sec : undefined,
+        etaSec: typeof event.payload.eta_sec === "number" ? event.payload.eta_sec : undefined
+      };
+      return next;
+    }
     case "animation": {
       const path = event.payload.path ?? undefined;
       next.pulsedNodeId = path?.length ? path[event.step % path.length] : state.pulsedNodeId;
       return next;
     }
-    case "run_complete":
-      next.status = "complete";
+    case "run_complete": {
+      const completionStatus = typeof event.payload.status === "string" ? event.payload.status : "completed";
+      const completionPhase = completionStatus === "trained" ? "completed" : completionStatus;
+      next.status = completionStatus === "failed" ? "error" : "complete";
+      next.progress = {
+        ...(state.progress ?? { phase: "completed", step: event.step }),
+        phase: completionPhase,
+        step: event.step,
+        progress: 1
+      };
       return next;
+    }
     default:
       return next;
   }

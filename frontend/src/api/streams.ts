@@ -10,6 +10,7 @@ const EVENT_TYPES: RunEventType[] = [
   "source_registered",
   "config_registered",
   "graph_registered",
+  "run_status",
   "run_complete"
 ];
 

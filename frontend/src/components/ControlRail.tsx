@@ -20,6 +20,7 @@ import type { NamedSourceFile, RunSummary } from "../api/client";
 import type { LoadedResourceSummary } from "../App";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { motionDuration, motionEase } from "../lib/motion";
+import { NumericField } from "./NumericField";
 
 gsap.registerPlugin(useGSAP);
 
@@ -237,28 +238,8 @@ function TrainView({
         </div>
 
         <div className="control-parameter-grid" aria-label="training parameters">
-          <label className="number-field">
-            <span>Training Steps</span>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              step={10}
-              value={trainingSteps}
-              onChange={(event) => onTrainingStepsChange(Number(event.target.value))}
-            />
-          </label>
-          <label className="number-field">
-            <span>Telemetry Stride</span>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              step={1}
-              value={telemetryStride}
-              onChange={(event) => onTelemetryStrideChange(Number(event.target.value))}
-            />
-          </label>
+          <NumericField label="Training Steps" onCommit={onTrainingStepsChange} range={{ min: 1, max: 500 }} value={trainingSteps} />
+          <NumericField label="Telemetry Stride" onCommit={onTelemetryStrideChange} range={{ min: 1, max: 500 }} value={telemetryStride} />
         </div>
 
         <button onClick={onRunTraining} disabled={!trainAvailable || busy === "train"} type="button">

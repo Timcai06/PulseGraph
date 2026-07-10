@@ -1,5 +1,8 @@
 import io
+import threading
 import textwrap
+import time
+import uuid
 import zipfile
 
 import pytest
@@ -11,6 +14,7 @@ from app.main import app
 from app.inspector.graph_builder import build_bounded_graph_from_tensor_specs
 from app.resources.contract import load_training_resource
 from app.runtime import mnist_data
+from app.runtime.resource_training import run_resource_training_job
 from app.schemas import ModelGraph
 
 
@@ -38,6 +42,100 @@ RESOURCE_SOURCE = textwrap.dedent(
 
     def build_model():
         return nn.Linear(4, 3)
+
+
+    def train_batch(step, batch_size):
+        images = torch.ones(batch_size, 4) * step
+        labels = torch.arange(batch_size) % 3
+        return images, labels
+
+
+    def inference_sample(index):
+        return torch.ones(1, 4) * index, index % 3
+    """
+)
+
+FAILING_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    def metadata():
+        return {"name": "failing_resource", "classes": 3, "input_shape": [1, 4]}
+
+
+    def build_model():
+        return nn.Linear(4, 3)
+
+
+    def train_batch(step, batch_size):
+        if step == 2:
+            raise RuntimeError("resource exploded at step 2")
+        images = torch.ones(batch_size, 4) * step
+        labels = torch.arange(batch_size) % 3
+        return images, labels
+
+
+    def inference_sample(index):
+        return torch.ones(1, 4) * index, index % 3
+    """
+)
+
+SLOW_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import time
+
+    import torch
+    from torch import nn
+
+
+    def metadata():
+        return {"name": "slow_resource", "classes": 3, "input_shape": [1, 4]}
+
+
+    def build_model():
+        return nn.Sequential(nn.Linear(4, 16), nn.ReLU(), nn.Linear(16, 3))
+
+
+    def train_batch(step, batch_size):
+        time.sleep(0.03)
+        images = torch.ones(batch_size, 4) * step
+        labels = torch.arange(batch_size) % 3
+        return images, labels
+
+
+    def inference_sample(index):
+        return torch.ones(1, 4) * index, index % 3
+    """
+)
+
+MANY_LAYER_RESOURCE_SOURCE = textwrap.dedent(
+    """
+    import torch
+    from torch import nn
+
+
+    class DeepTinyNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            blocks = []
+            for _ in range(70):
+                blocks.append(nn.Linear(4, 4))
+                blocks.append(nn.ReLU())
+            blocks.append(nn.Linear(4, 3))
+            self.net = nn.Sequential(*blocks)
+
+        def forward(self, x):
+            return self.net(x)
+
+
+    def metadata():
+        return {"name": "many_layer_resource", "classes": 3, "input_shape": [1, 4]}
+
+
+    def build_model():
+        return DeepTinyNet()
 
 
     def train_batch(step, batch_size):
@@ -366,6 +464,15 @@ def _tiny_png_bytes() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (2, 2), (240, 48, 48)).save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def _wait_for_condition(predicate, timeout_sec: float = 3.0) -> None:
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("Timed out waiting for background condition.")
 
 
 def test_training_resource_contract_loads_model_batches_and_samples(tmp_path) -> None:
@@ -751,9 +858,143 @@ def test_train_resource_endpoint_respects_telemetry_stride() -> None:
     run_id = response.json()["run_id"]
     detail = client.get(f"/api/runs/{run_id}/detail").json()
 
-    assert [metric["step"] for metric in detail["metrics"]] == [3, 6]
+    assert [metric["step"] for metric in detail["metrics"]] == [1, 3, 6]
     assert detail["config"]["steps"] == 6
     assert detail["config"]["telemetry_stride"] == 3
+
+
+def test_train_resource_endpoint_publishes_run_status_schema_and_lifecycle() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "3", "telemetry_stride": "2"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    events = main_module.run_store.load_events(run_id)
+    status_events = [event for event in events if event.type == "run_status"]
+
+    assert [event.payload["phase"] for event in status_events[:3]] == ["queued", "loading", "building"]
+    assert "training" in [event.payload["phase"] for event in status_events]
+    assert status_events[-1].payload["phase"] == "completed"
+    first_training = next(event for event in status_events if event.payload["phase"] == "training")
+    assert first_training.source == "training"
+    assert first_training.payload["message"] == "Training step 1/3"
+    assert first_training.payload["step"] == 1
+    assert first_training.payload["total_steps"] == 3
+    assert 0 < first_training.payload["progress"] <= 1
+    assert "elapsed_sec" in first_training.payload
+    assert "eta_sec" in first_training.payload
+
+
+def test_train_resource_endpoint_aggregates_layer_snapshots_but_preserves_full_details() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", MANY_LAYER_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "1", "telemetry_stride": "1"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    events = main_module.run_store.load_events(run_id)
+    layer_events = [event for event in events if event.type == "layer_snapshot"]
+
+    assert len(layer_events) == 1
+    payload = layer_events[0].payload
+    assert payload["mode"] == "aggregate"
+    assert payload["layer_count"] > payload["sampled_layer_count"]
+    assert payload["sampled_layer_count"] <= main_module.MAX_LIVE_LAYER_SAMPLES
+    saved_layers = main_module.run_store.load_layer_snapshot(run_id, 1)
+    assert len(saved_layers) == payload["layer_count"]
+
+    report = client.get(f"/api/runs/{run_id}/report").json()
+    layer_ids = {item["layer_id"] for item in report["layer_health"]}
+    assert "__aggregate__" not in layer_ids
+    assert len(layer_ids) > payload["sampled_layer_count"]
+
+
+def test_train_resource_endpoint_persists_failed_completion_and_config() -> None:
+    response = client.post(
+        "/api/runs/train-resource",
+        files=[("files", ("resource.py", FAILING_RESOURCE_SOURCE.encode(), "text/x-python"))],
+        data={"entry_file": "resource.py", "steps": "3", "telemetry_stride": "2"},
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    detail = client.get(f"/api/runs/{run_id}/detail").json()
+    events = main_module.run_store.load_events(run_id)
+
+    assert detail["config"]["training_status"] == "failed"
+    assert detail["config"]["error"] == "resource exploded at step 2"
+    assert any(event.type == "metric" and event.step == 1 for event in events)
+    assert events[-1].type == "run_complete"
+    assert events[-1].payload["status"] == "failed"
+    assert events[-1].payload["error"] == "resource exploded at step 2"
+
+
+def test_cancel_api_cancels_running_resource_job_end_to_end() -> None:
+    run_id = f"cancel-{uuid.uuid4().hex[:10]}"
+    main_module.run_store.save_source_files(
+        run_id,
+        [("resource.py", SLOW_RESOURCE_SOURCE.encode())],
+        "resource.py",
+        "TrainingResource",
+    )
+    source_path = main_module.run_store.source_path(run_id)
+    assert source_path is not None
+    source_root = main_module.run_store.run_dir(run_id) / "source"
+    main_module.run_store.save_config(
+        run_id,
+        {
+            "source": "training-resource",
+            "run_kind": "resource-training",
+            "resource_name": "slow_resource",
+            "task": "classification",
+            "inference_only": False,
+            "training_status": "queued",
+            "training_recipe": "resource-contract",
+            "steps": 8,
+            "telemetry_stride": 4,
+            "entry_file": "resource.py",
+            "entry_class": "TrainingResource",
+            "weights": "training",
+            "cancel_requested": False,
+        },
+    )
+    thread = threading.Thread(
+        target=run_resource_training_job,
+        args=(run_id, source_path, source_root, 8, 4),
+        kwargs={
+            "run_store": main_module.run_store,
+            "run_registry": main_module.run_registry,
+            "training_task_controller": main_module.training_task_controller,
+            "max_live_layer_samples": main_module.MAX_LIVE_LAYER_SAMPLES,
+        },
+        daemon=True,
+    )
+    thread.start()
+    _wait_for_condition(
+        lambda: any(
+            event.type == "run_status" and event.payload.get("phase") == "training" and event.step >= 1
+            for event in main_module.run_store.load_events(run_id)
+        )
+    )
+
+    cancel = client.post(f"/api/runs/{run_id}/cancel")
+    thread.join(timeout=5)
+
+    assert cancel.status_code == 200
+    assert cancel.json()["cancel_requested"] is True
+    assert not thread.is_alive()
+    detail = client.get(f"/api/runs/{run_id}/detail").json()
+    events = main_module.run_store.load_events(run_id)
+    assert detail["config"]["training_status"] == "cancelled"
+    assert any(event.type == "run_status" and event.payload["phase"] == "cancelling" for event in events)
+    assert any(event.type == "run_status" and event.payload["phase"] == "cancelled" for event in events)
+    assert events[-1].type == "run_complete"
+    assert events[-1].payload["status"] == "cancelled"
 
 
 def test_train_resource_endpoint_accepts_plain_nn_module_source() -> None:
