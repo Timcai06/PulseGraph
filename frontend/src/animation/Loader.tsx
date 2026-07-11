@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { INTRO_EXIT_EVENT, introEnabled, markIntroSeen } from "./introGate";
+import { INTRO_EXIT_EVENT, introEnabled } from "./introGate";
 import { usePreloadGate } from "./usePreloadGate";
 import {
   displayedProgressValue,
@@ -21,7 +21,7 @@ function randomBaffleChar() {
 }
 
 /**
- * 会话门：每 tab 只播一次（sessionStorage），`?intro` 强制重播。
+ * 每次刷新都播；`?nointro` 跳过（调试/E2E 用）。
  * 不播时整个 Loader 不挂载 —— 预加载请求、GSAP、shader chunk 都不发生；
  * introGate.onIntroHandoff 会立即放行 App 的入场动画。
  */
@@ -168,7 +168,6 @@ function LoaderPanel() {
     const ctx = gsap.context(() => {
       if (reducedMotion) {
         // 快速路径：交接 + 0.35s 淡出，不跑字符/卷帘编排
-        markIntroSeen();
         window.dispatchEvent(new CustomEvent(INTRO_EXIT_EVENT));
         gsap.to(panelRef.current, {
           opacity: 0,
@@ -223,15 +222,8 @@ function LoaderPanel() {
         tl.to(dot, { opacity: 0, duration: 0.24, ease: "power2.in" }, ">-0.08");
       }
 
-      /* 面板清场前一瞬把控制权交给底下的 App（此刻起算"完整看过"） */
-      tl.call(
-        () => {
-          markIntroSeen();
-          window.dispatchEvent(new CustomEvent(INTRO_EXIT_EVENT));
-        },
-        [],
-        ">-0.15"
-      );
+      /* 面板清场前一瞬把控制权交给底下的 App */
+      tl.call(() => window.dispatchEvent(new CustomEvent(INTRO_EXIT_EVENT)), [], ">-0.15");
 
       /* 卷帘门：整屏上滑，露出已组装好的驾驶舱 */
       tl.to(panelRef.current, { yPercent: -100, duration: 1.15, ease: "expo.inOut" }, ">-0.05");
