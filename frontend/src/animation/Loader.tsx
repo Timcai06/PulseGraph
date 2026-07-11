@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import gsap from "gsap";
+import { INTRO_EXIT_EVENT, introEnabled, markIntroSeen } from "./introGate";
 import { usePreloadGate } from "./usePreloadGate";
 import {
   displayedProgressValue,
@@ -19,8 +20,15 @@ function randomBaffleChar() {
   return BAFFLE_CHARS[Math.floor(Math.random() * BAFFLE_CHARS.length)] ?? "";
 }
 
-/** Hero/App 侧如需接管入场动画，监听这个事件（面板清场前一瞬 dispatch）。 */
-export const INTRO_EXIT_EVENT = "pulsegraph:intro-exit";
+/**
+ * 会话门：每 tab 只播一次（sessionStorage），`?intro` 强制重播。
+ * 不播时整个 Loader 不挂载 —— 预加载请求、GSAP、shader chunk 都不发生；
+ * introGate.onIntroHandoff 会立即放行 App 的入场动画。
+ */
+export default function Loader() {
+  if (!introEnabled) return null;
+  return <LoaderPanel />;
+}
 
 /**
  * Loader 全屏加载页 —— 应用入口动画的 start-to-end 编排。
@@ -31,8 +39,11 @@ export const INTRO_EXIT_EVENT = "pulsegraph:intro-exit";
  *
  * 节奏参数全部来自 loaderTiming.ts（可单测）；乱码用 setInterval(42ms) ≈ 24fps，
  * 抖动感刚好且不需要 60fps 精度；退场 yPercent:-100 用 expo.inOut(1.15s) 制造卷帘门感。
+ *
+ * prefers-reduced-motion：跳过乱码/升起/卷帘（字符直接就位，退场改 0.35s 淡出），
+ * 但资源门照走 —— 降动用户同样等到真实资源就绪。
  */
-export default function Loader() {
+function LoaderPanel() {
   const panelRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const countRef = useRef<HTMLSpanElement>(null);
@@ -43,6 +54,10 @@ export default function Loader() {
   const [introReady, setIntroReady] = useState(false);
   const preload = usePreloadGate();
   const stageText = preload.ready ? "ready" : preload.label;
+  // 组件生命周期内不变，读一次即可（切系统偏好需刷新，与原版一致）
+  const reducedMotion = useRef(
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ).current;
 
   useEffect(() => {
     preloadRef.current = preload;
@@ -56,6 +71,13 @@ export default function Loader() {
     const ctx = gsap.context(() => {
       const charEls = textRef.current?.querySelectorAll<HTMLElement>(".intro__char");
       if (!charEls?.length) return;
+
+      if (reducedMotion) {
+        // 快速路径：字符直接就位，跳过乱码与扫描线
+        gsap.set(charEls, { opacity: 1, yPercent: 0 });
+        setIntroReady(true);
+        return;
+      }
 
       const tl = gsap.timeline();
 
@@ -144,6 +166,19 @@ export default function Loader() {
     exitStarted.current = true;
 
     const ctx = gsap.context(() => {
+      if (reducedMotion) {
+        // 快速路径：交接 + 0.35s 淡出，不跑字符/卷帘编排
+        markIntroSeen();
+        window.dispatchEvent(new CustomEvent(INTRO_EXIT_EVENT));
+        gsap.to(panelRef.current, {
+          opacity: 0,
+          duration: 0.35,
+          ease: "power2.out",
+          onComplete: () => setDone(true)
+        });
+        return;
+      }
+
       const charEls = textRef.current?.querySelectorAll<HTMLElement>(".intro__char");
       if (!charEls?.length) return;
       const titleChars = textRef.current?.querySelectorAll<HTMLElement>(
@@ -188,11 +223,23 @@ export default function Loader() {
         tl.to(dot, { opacity: 0, duration: 0.24, ease: "power2.in" }, ">-0.08");
       }
 
-      /* 面板清场前一瞬把控制权交给底下的 App */
-      tl.call(() => window.dispatchEvent(new CustomEvent(INTRO_EXIT_EVENT)), [], ">-0.15");
+      /* 面板清场前一瞬把控制权交给底下的 App（此刻起算"完整看过"） */
+      tl.call(
+        () => {
+          markIntroSeen();
+          window.dispatchEvent(new CustomEvent(INTRO_EXIT_EVENT));
+        },
+        [],
+        ">-0.15"
+      );
 
       /* 卷帘门：整屏上滑，露出已组装好的驾驶舱 */
       tl.to(panelRef.current, { yPercent: -100, duration: 1.15, ease: "expo.inOut" }, ">-0.05");
+
+      /* 浅色主题下深色幕布掀开会有明暗跳变：wipe 后半程叠加淡出，软化落差 */
+      if (document.documentElement.dataset.theme === "light") {
+        tl.to(panelRef.current, { opacity: 0, duration: 0.7, ease: "power2.in" }, "<0.3");
+      }
 
       tl.call(() => setDone(true));
     }, panelRef);

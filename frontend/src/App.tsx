@@ -40,6 +40,7 @@ import { LayerInspector } from "./components/LayerInspector";
 import { TimelineScrubber } from "./components/TimelineScrubber";
 import { useRunStream } from "./hooks/useRunStream";
 import { useReducedMotion } from "./hooks/useReducedMotion";
+import { onIntroHandoff } from "./animation/introGate";
 import type { Theme } from "./lib/chartTheme";
 import type { ForwardTarget } from "./lib/forwardTarget";
 import { describeForwardTarget, resolveForwardTarget } from "./lib/forwardTarget";
@@ -176,30 +177,50 @@ export default function App() {
     return () => window.removeEventListener("hashchange", syncWorkspace);
   }, []);
 
+  // 入场动画等 intro 交接：Loader 卷帘上滑前一瞬 dispatch intro-exit，
+  // 驾驶舱各层随幕布显露顺序（自下而上）依次入场；本会话不播 intro 时立即执行。
   useGSAP(
-    () => {
+    (_context, contextSafe) => {
       if (reducedMotion) return;
-      const selector = gsap.utils.selector(shellRef);
-      const entranceTargets = selector(".top-bar, .page-tabs, .stage-toolbar");
-      if (entranceTargets.length) {
-        gsap.from(entranceTargets, {
-          opacity: 0,
-          y: 14,
-          duration: motionDurations.panel,
-          stagger: motionStagger.section,
-          ease: motionEase.standard,
-          clearProps: "all"
-        });
-      }
-      const controlDrawer = selector(".left-control-drawer");
-      if (controlDrawer.length) {
-        gsap.from(controlDrawer, { opacity: 0, duration: motionDurations.panel, delay: 0.18, clearProps: "opacity" });
-      }
-      const dock = dockRef.current;
-      if (dock) {
-        // the dock keeps its own transform (drawer position), so fade opacity only
-        gsap.from(dock, { opacity: 0, duration: motionDurations.panel, delay: 0.25, clearProps: "opacity" });
-      }
+      const enter = contextSafe!(() => {
+        const selector = gsap.utils.selector(shellRef);
+        const dock = dockRef.current;
+        if (dock) {
+          // the dock keeps its own transform (drawer position), so fade opacity only
+          gsap.from(dock, { opacity: 0, duration: motionDurations.panel, delay: 0.1, clearProps: "opacity" });
+        }
+        // 图节点按 dagre 布局的 DOM 序（拓扑序）浮现；只动内层卡片，
+        // 外层 .react-flow__node 的 transform 是 React Flow 的定位，不能碰
+        const nodeCards = selector(".react-flow__node .model-node");
+        if (nodeCards.length) {
+          gsap.from(nodeCards, {
+            opacity: 0,
+            y: 18,
+            duration: 0.6,
+            stagger: 0.06,
+            delay: 0.2,
+            ease: "power3.out",
+            clearProps: "all"
+          });
+        }
+        const controlDrawer = selector(".left-control-drawer");
+        if (controlDrawer.length) {
+          gsap.from(controlDrawer, { opacity: 0, duration: motionDurations.panel, delay: 0.3, clearProps: "opacity" });
+        }
+        const entranceTargets = selector(".top-bar, .page-tabs, .stage-toolbar");
+        if (entranceTargets.length) {
+          gsap.from(entranceTargets, {
+            opacity: 0,
+            y: 14,
+            duration: motionDurations.panel,
+            delay: 0.4,
+            stagger: motionStagger.section,
+            ease: motionEase.standard,
+            clearProps: "all"
+          });
+        }
+      });
+      return onIntroHandoff(enter);
     },
     { scope: shellRef }
   );
