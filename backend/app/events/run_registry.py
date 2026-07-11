@@ -29,6 +29,10 @@ class LiveRun:
     event_count: int = 0
     last_step: int = 0
     buffer: deque[RunEvent] = field(default_factory=lambda: deque(maxlen=BUFFER_SIZE))
+    # Pinned outside the ring buffer: long runs (> BUFFER_SIZE events) evict the
+    # step-0 graph event, and without it subscribers can never map layer
+    # snapshots onto graph nodes.
+    graph_event: RunEvent | None = None
     subscribers: set[LiveSubscriber] = field(default_factory=set)
 
 
@@ -59,13 +63,8 @@ class RunRegistry:
             return 0
         for run_id, events in self.store.load_all(BUFFER_SIZE).items():
             self._ensure_capacity(run_id)
-            run = LiveRun(run_id=run_id)
-            run.created_at = events[0].ts_ns / 1e9
-            run.last_event_at = events[-1].ts_ns / 1e9
-            run.event_count = len(events)
-            run.last_step = max(event.step for event in events)
-            run.completed = any(event.type == "run_complete" for event in events)
-            run.buffer.extend(events)
+            run = self._from_events(run_id, events)
+            self._pin_graph_event(run, run_id)
             self._runs[run_id] = run
         return len(self._runs)
 
@@ -79,6 +78,17 @@ class RunRegistry:
         run.completed = any(event.type == "run_complete" for event in events)
         run.buffer.extend(events)
         return run
+
+    def _pin_graph_event(self, run: LiveRun, run_id: str) -> None:
+        """Make the structural graph event survive ring-buffer eviction."""
+        if run.graph_event is not None:
+            return
+        buffered = next((event for event in run.buffer if event.type == "graph"), None)
+        if buffered is not None:
+            run.graph_event = buffered
+            return
+        if self.store is not None:
+            run.graph_event = self.store.load_first_event(run_id, "graph")
 
     def ensure(self, run_id: str) -> LiveRun | None:
         with self._lock:
@@ -94,6 +104,7 @@ class RunRegistry:
                 return existing
             self._ensure_capacity(run_id)
             run = self._from_events(run_id, events)
+            self._pin_graph_event(run, run_id)
             self._runs[run_id] = run
             return run
 
@@ -131,6 +142,8 @@ class RunRegistry:
                 run.event_count += 1
                 run.last_step = max(run.last_step, event.step)
                 run.last_event_at = time.time()
+                if event.type == "graph":
+                    run.graph_event = event
                 if event.type == "run_complete":
                     run.completed = True
                 for subscriber in tuple(run.subscribers):
@@ -171,7 +184,12 @@ class RunRegistry:
             run.subscribers.add(subscriber)
             replay = list(run.buffer)
             completed = run.completed
+            graph_event = run.graph_event
         try:
+            # Ring buffer may have evicted the step-0 graph event on long runs;
+            # without it the client cannot map layer snapshots to graph nodes.
+            if graph_event is not None and not any(event.type == "graph" for event in replay):
+                yield graph_event
             for event in replay:
                 yield event
             if completed:

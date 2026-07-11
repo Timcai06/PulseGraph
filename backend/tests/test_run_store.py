@@ -62,3 +62,39 @@ def test_config_updates_do_not_lose_concurrent_fields(tmp_path, monkeypatch) -> 
     assert config is not None
     assert all(config[f"field_{index}"] == index for index in range(40))
     assert not list((tmp_path / run_id).glob("*.tmp"))
+
+
+def test_load_first_event_reads_head_of_log_past_bounded_window(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PULSEGRAPH_RUNS_DIR", str(tmp_path))
+    store = RunStore()
+    run_id = "graph-head-run"
+    graph_event = RunEvent(
+        event_id=str(uuid.uuid4()),
+        ts_ns=time.time_ns(),
+        source="training",
+        type="graph",
+        run_id=run_id,
+        step=0,
+        payload={"graph": {"nodes": [{"id": "backbone.0"}], "edges": []}},
+    )
+    store.append(run_id, [graph_event])
+    store.append(run_id, [_event(run_id, step) for step in range(1, 21)])
+
+    # bounded tail read drops the head-of-log graph event...
+    tail = store.load_events(run_id, max_events=5)
+    assert all(event.type != "graph" for event in tail)
+
+    # ...but the head scan still finds it
+    found = store.load_first_event(run_id, "graph")
+    assert found is not None
+    assert found.event_id == graph_event.event_id
+
+
+def test_load_first_event_returns_none_when_type_absent(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PULSEGRAPH_RUNS_DIR", str(tmp_path))
+    store = RunStore()
+    run_id = "no-graph-run"
+    store.append(run_id, [_event(run_id, 1)])
+
+    assert store.load_first_event(run_id, "graph") is None
+    assert store.load_first_event("missing-run", "graph") is None

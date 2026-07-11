@@ -286,7 +286,9 @@ export default function App() {
   }, [backendStatus, refreshRuns]);
 
   // a live run's registered graph replaces the displayed model graph
+  const streamGraphRef = useRef<ModelGraph | undefined>(undefined);
   useEffect(() => {
+    streamGraphRef.current = stream.graph;
     if (stream.graph) {
       setGraph(stream.graph);
       setSelectedNode(firstDisplayNode(stream.graph));
@@ -307,6 +309,14 @@ export default function App() {
         if (!cancelled) {
           setActiveRunContract(runContractFromConfig(detail.config));
           setActiveRunDetail(detail);
+          // 兜底：流里没等到 graph 事件（历史上长 run 的回放会丢首事件）时，
+          // 用持久化的 detail.graph 换图，保证 layer_snapshot 能对上节点 id
+          if (!streamGraphRef.current && detail.graph?.nodes?.length) {
+            setGraph(detail.graph);
+            setSelectedNode(firstDisplayNode(detail.graph));
+            setGhostEdges([]);
+            setSelectedGhostEdgeId(undefined);
+          }
         }
       })
       .catch(() => {

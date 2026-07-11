@@ -188,3 +188,29 @@ def test_unknown_stream_returns_not_found() -> None:
     response = client.get(f"/api/runs/missing-{uuid.uuid4().hex}/stream")
 
     assert response.status_code == 404
+
+
+def test_stream_replays_graph_event_after_ring_buffer_eviction() -> None:
+    from app.events.run_registry import BUFFER_SIZE
+
+    registry = RunRegistry()
+    run_id = f"long-{uuid.uuid4().hex[:8]}"
+    graph_payload = {"graph": {"nodes": [{"id": "backbone.0"}], "edges": []}}
+    events = [_run_event(run_id, event_type="graph", step=0, **graph_payload)]
+    events += [_run_event(run_id, step=step, loss=1.0) for step in range(1, BUFFER_SIZE + 10)]
+    events += [_run_event(run_id, event_type="run_complete", step=BUFFER_SIZE + 10)]
+    registry.publish(run_id, events)
+
+    live_run = registry.get(run_id)
+    assert live_run is not None
+    assert all(event.type != "graph" for event in live_run.buffer)  # evicted from the ring
+
+    async def first_replayed() -> RunEvent:
+        stream = registry.subscribe(run_id)
+        first = await anext(stream)
+        await stream.aclose()
+        return first
+
+    first = asyncio.run(first_replayed())
+    assert first.type == "graph"
+    assert first.payload == graph_payload

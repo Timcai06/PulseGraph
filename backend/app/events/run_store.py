@@ -138,6 +138,30 @@ class RunStore:
                 return []
             return self._parse_events(_read_lines(path, max_events))
 
+    def load_first_event(self, run_id: str, event_type: str) -> RunEvent | None:
+        """Scan a run's log from the top for the first event of a type.
+
+        `load_events` keeps the newest lines, so head-of-log structural events
+        (the step-0 graph) are lost for long runs — this reads from the top
+        instead. Cheap in practice: the graph event is normally the first line.
+        """
+        with _run_lock(run_id):
+            path = self.existing_run_dir(run_id) / "events.jsonl"
+            if not path.exists():
+                path = runs_dir() / f"{safe_run_id(run_id)}.jsonl"
+            if not path.exists():
+                return None
+            with path.open("r", encoding="utf-8") as handle:
+                with _file_lock(handle, exclusive=False):
+                    for line in handle:
+                        try:
+                            event = RunEvent.model_validate(json.loads(line))
+                        except (json.JSONDecodeError, ValidationError):
+                            continue
+                        if event.type == event_type:
+                            return event
+        return None
+
     def load_all(self, max_events_per_run: int) -> dict[str, list[RunEvent]]:
         """Load every persisted run, keeping only the newest events per run.
 
