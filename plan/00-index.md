@@ -1,6 +1,6 @@
-# PulseGraph Plan Index
+# PulseGraph Direction
 
-This directory contains only the active product and implementation stage. Completed stage plans are removed rather than archived here.
+This directory does not archive completed or abandoned stage plans. New numbered plans are not created by default; development follows the current product direction and real workload evidence.
 
 ## Product Boundary
 
@@ -15,14 +15,23 @@ It should answer:
 
 PulseGraph is not becoming a generic cloud trainer, cluster orchestrator, dataset platform, or drag-and-drop model builder.
 
-## Current Stage
+## Current Direction
 
-- [09-attach-first-training-investigation.md](09-attach-first-training-investigation.md): attach PulseGraph to the existing MiniGPT training loop and capture AMP and `torch.compile` evidence without taking ownership of training.
+- Continue deepening computer vision; LLM workloads are paused.
+- Prefer one real CV vertical slice over adding many shallow task labels.
+- Use a real model, real images, a healthy run, and a controlled faulty run to prove that PulseGraph can locate the first meaningful difference.
+- Keep classification and detection working while real workloads determine when segmentation, keypoints, OCR, or embedding support is justified.
+- Treat AMP, compilation, profiling, and external-script attachment as supporting mechanisms rather than the product objective.
+
+The development loop is:
+
+`real CV workload -> observable failure -> recorded evidence -> focused product improvement -> regression proof`
 
 ## Working Rules
 
 1. Preserve the user's real training script and add low-friction instrumentation around it.
 2. Separate lightweight continuous telemetry from opt-in deep capture.
 3. Every diagnosis must link to recorded evidence; UI inference is never runtime truth.
-4. Add a new task renderer or panel only when a real model forces the requirement.
-5. Keep the current Resource workflow as Managed Lab while Attach & Observe becomes the long-term integration path.
+4. Add a new task renderer or panel only when a real CV model forces the requirement.
+5. Keep the current Resource workflow as a repeatable platform validation path; do not force every real training experiment into that contract.
+6. Delete completed or abandoned plan material instead of accumulating plan history.
