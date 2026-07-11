@@ -11,6 +11,7 @@ import type {
   NamedSourceFile,
   OutputSchema,
   PredictionResponse,
+  RunDetail,
   RunSummary
 } from "./api/client";
 import {
@@ -34,6 +35,7 @@ import { RunDetailPanel } from "./components/RunDetailPanel";
 import { HistoryPage } from "./components/HistoryPage";
 import { StageStats } from "./components/StageStats";
 import { TrainingLoopStrip } from "./components/TrainingLoopStrip";
+import { EvaluationEvidencePanel } from "./components/EvaluationEvidencePanel";
 import { LayerInspector } from "./components/LayerInspector";
 import { TimelineScrubber } from "./components/TimelineScrubber";
 import { useRunStream } from "./hooks/useRunStream";
@@ -137,6 +139,7 @@ export default function App() {
   const [pendingForwardRun, setPendingForwardRun] = useState<string | undefined>();
   const [sourceRecipe, setSourceRecipe] = useState<SourceRecipe | undefined>();
   const [activeRunContract, setActiveRunContract] = useState<RunContract | undefined>();
+  const [activeRunDetail, setActiveRunDetail] = useState<RunDetail | undefined>();
   const [currentRunKind, setCurrentRunKind] = useState<CurrentRunKind | undefined>();
   const [trainingSteps, setTrainingSteps] = useState(DEFAULT_TRAINING_STEPS);
   const [telemetryStride, setTelemetryStride] = useState(DEFAULT_TELEMETRY_STRIDE);
@@ -274,20 +277,27 @@ export default function App() {
   useEffect(() => {
     if (!stream.runId) {
       setActiveRunContract(undefined);
+      setActiveRunDetail(undefined);
       return;
     }
     let cancelled = false;
     getRunDetail(stream.runId)
       .then((detail) => {
-        if (!cancelled) setActiveRunContract(runContractFromConfig(detail.config));
+        if (!cancelled) {
+          setActiveRunContract(runContractFromConfig(detail.config));
+          setActiveRunDetail(detail);
+        }
       })
       .catch(() => {
-        if (!cancelled) setActiveRunContract(undefined);
+        if (!cancelled) {
+          setActiveRunContract(undefined);
+          setActiveRunDetail(undefined);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [stream.runId]);
+  }, [stream.runId, stream.status]);
 
   const latestStep = stream.metrics.length ? stream.metrics[stream.metrics.length - 1].step : 0;
   const runBuckets = useMemo(() => splitRunBuckets(liveRuns), [liveRuns]);
@@ -356,6 +366,17 @@ export default function App() {
       setErrorMessage(error instanceof Error ? error.message : "Forward pass failed.");
     } finally {
       setBusy(undefined);
+    }
+  };
+
+  const handleInspectRecordedSample = async (index: number) => {
+    if (!activeRunDetail) return;
+    const checkpoint = activeRunDetail.checkpoints[activeRunDetail.checkpoints.length - 1];
+    try {
+      applyPredictionResult(await runForward(activeRunDetail.run_id, checkpoint?.step ?? 0, index));
+      setErrorMessage(undefined);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Recorded sample replay failed.");
     }
   };
 
@@ -763,6 +784,7 @@ export default function App() {
                   </div>
                 )}
               </section>
+              <EvaluationEvidencePanel detail={activeRunDetail} onInspectSample={handleInspectRecordedSample} />
               <DiagnosticsTray error={errorMessage} events={timelineLive ? stream.events : replayEvents} />
             </div>
           </section>

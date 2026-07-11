@@ -11,6 +11,7 @@ from app.schemas import RunEvent
 RunEventType = Literal[
     "run_status",
     "training_stage",
+    "evidence",
     "metric",
     "layer_snapshot",
     "infra",

@@ -6,6 +6,7 @@ import type {
   PredictionResponse,
   ResourcePreview,
   RunDetail,
+  RunComparison,
   RunReport,
   RunSummary,
   SourceCandidate,
@@ -67,6 +68,13 @@ export async function cancelRun(runId: string): Promise<{ run_id: string; cancel
 export async function getRunDetail(runId: string): Promise<RunDetail> {
   const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/detail`);
   if (!response.ok) throw new Error("Failed to load run detail");
+  return response.json();
+}
+
+export async function compareRuns(baselineRunId: string, candidateRunId: string): Promise<RunComparison> {
+  const query = new URLSearchParams({ baseline_run_id: baselineRunId, candidate_run_id: candidateRunId });
+  const response = await fetch(`/api/runs/compare?${query}`);
+  if (!response.ok) throw new Error("Failed to compare runs");
   return response.json();
 }
 

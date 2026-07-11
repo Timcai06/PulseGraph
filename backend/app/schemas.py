@@ -123,6 +123,7 @@ class RunDetail(BaseModel):
     graph: ModelGraph | None = None
     has_samples: bool = False
     metrics: list[dict[str, Any]] = Field(default_factory=list)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
     checkpoints: list[CheckpointInfo] = Field(default_factory=list)
     event_count: int = 0
 
@@ -214,6 +215,32 @@ class RunSummary(BaseModel):
     last_step: int
 
 
+class RunValueDifference(BaseModel):
+    path: str
+    baseline: Any = None
+    candidate: Any = None
+
+
+class SignalDivergence(BaseModel):
+    step: int
+    epoch: int | None = None
+    category: Literal["batch", "layer", "metric"]
+    signal: str
+    layer: str | None = None
+    baseline: Any = None
+    candidate: Any = None
+    absolute_delta: float | None = None
+    relative_delta: float | None = None
+
+
+class RunComparison(BaseModel):
+    baseline_run_id: str
+    candidate_run_id: str
+    comparable: bool
+    contract_differences: list[RunValueDifference] = Field(default_factory=list)
+    first_observed_divergence: SignalDivergence | None = None
+
+
 class RunEvent(BaseModel):
     event_id: str
     schema_version: str = "pulsegraph.event.v1"
@@ -222,6 +249,7 @@ class RunEvent(BaseModel):
     type: Literal[
         "run_status",
         "training_stage",
+        "evidence",
         "metric",
         "layer_snapshot",
         "infra",

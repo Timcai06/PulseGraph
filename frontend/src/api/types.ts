@@ -194,6 +194,7 @@ export type RunEvent =
   | (RunEventBase & { type: "graph_registered"; payload: Record<string, unknown> })
   | (RunEventBase & { type: "run_status"; payload: RunStatusPayload })
   | (RunEventBase & { type: "training_stage"; payload: TrainingStagePayload })
+  | (RunEventBase & { type: "evidence"; payload: Record<string, unknown> })
   | (RunEventBase & { type: "run_complete"; payload: Record<string, unknown> });
 
 export type RunEventType = RunEvent["type"];
@@ -205,6 +206,24 @@ export type RunSummary = {
   completed: boolean;
   event_count: number;
   last_step: number;
+};
+
+export type RunComparison = {
+  baseline_run_id: string;
+  candidate_run_id: string;
+  comparable: boolean;
+  contract_differences: Array<{ path: string; baseline: unknown; candidate: unknown }>;
+  first_observed_divergence?: {
+    step: number;
+    epoch?: number | null;
+    category: "batch" | "layer" | "metric";
+    signal: string;
+    layer?: string | null;
+    baseline: unknown;
+    candidate: unknown;
+    absolute_delta?: number | null;
+    relative_delta?: number | null;
+  } | null;
 };
 
 export type CheckpointInfo = {
@@ -227,6 +246,7 @@ export type RunDetail = {
   graph?: ModelGraph | null;
   has_samples: boolean;
   metrics: Record<string, unknown>[];
+  evidence: Record<string, unknown>[];
   checkpoints: CheckpointInfo[];
   event_count: number;
 };

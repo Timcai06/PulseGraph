@@ -43,6 +43,32 @@ def test_ingest_single_event_and_list_runs() -> None:
     assert match["completed"] is False
 
 
+def test_ingest_preserves_structured_evidence() -> None:
+    run_id = f"evidence-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "kind": "batch",
+        "sample_ids": ["Abyssinian_1", "Bengal_2"],
+        "transform_fingerprint": "abc123",
+        "input_mean": 0.25,
+    }
+
+    response = client.post(
+        f"/api/runs/{run_id}/events",
+        json=[
+            _event(run_id, "evidence", 4, **payload),
+            _event(run_id, "run_complete", 4),
+        ],
+    )
+
+    assert response.status_code == 200
+    with client.stream("GET", f"/api/runs/{run_id}/stream") as stream:
+        body = "".join(stream.iter_text())
+    assert "event: evidence" in body
+    assert '"sample_ids": ["Abyssinian_1", "Bengal_2"]' in body
+    detail = client.get(f"/api/runs/{run_id}/detail").json()
+    assert detail["evidence"] == [{"step": 4, "epoch": 1, **payload}]
+
+
 def test_ingest_batch_overrides_run_id_and_marks_completion() -> None:
     run_id = f"test-{uuid.uuid4().hex[:8]}"
     batch = [

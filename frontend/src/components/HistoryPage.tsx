@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, FileText, Play, Radio, Trash2 } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, FileText, GitCompareArrows, Play, Radio, RotateCcw, Trash2 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import type { RunSummary } from "../api/client";
-import { getRunDetail } from "../api/client";
+import type { RunComparison, RunSummary } from "../api/client";
+import { compareRuns, getRunDetail } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { motionDuration, motionEase, motionStagger } from "../lib/motion";
 import { Sparkline } from "./Sparkline";
@@ -41,6 +41,13 @@ function extractLosses(rows: Record<string, unknown>[]): number[] {
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
 
+function compactValue(value: unknown) {
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  if (typeof value === "string") return value.length > 34 ? `${value.slice(0, 31)}…` : value;
+  if (value == null) return "—";
+  return JSON.stringify(value);
+}
+
 export function HistoryPage({
   runs,
   title = "Run Library",
@@ -62,7 +69,14 @@ export function HistoryPage({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatusFilter);
   const [canScrollBack, setCanScrollBack] = useState(false);
   const [canScrollForward, setCanScrollForward] = useState(false);
+  const [compareRunIds, setCompareRunIds] = useState<string[]>([]);
+  const [comparison, setComparison] = useState<RunComparison | undefined>();
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [comparisonError, setComparisonError] = useState<string | undefined>();
   const reducedMotion = useReducedMotion();
+
+  const baselineRunId = compareRunIds[0];
+  const candidateRunId = compareRunIds[1];
 
   const normalizedQuery = query.trim().toLowerCase();
   const orderedRuns = [...runs]
@@ -116,6 +130,38 @@ export function HistoryPage({
       viewport.removeEventListener("scroll", update);
     };
   }, [normalizedQuery, orderedRuns.length, statusFilter]);
+
+  useEffect(() => {
+    if (!baselineRunId || !candidateRunId) {
+      setComparison(undefined);
+      setComparisonError(undefined);
+      return;
+    }
+    let cancelled = false;
+    setComparisonLoading(true);
+    setComparisonError(undefined);
+    compareRuns(baselineRunId, candidateRunId)
+      .then((result) => {
+        if (!cancelled) setComparison(result);
+      })
+      .catch(() => {
+        if (!cancelled) setComparisonError("Run comparison is unavailable.");
+      })
+      .finally(() => {
+        if (!cancelled) setComparisonLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baselineRunId, candidateRunId]);
+
+  const toggleComparisonRun = (runId: string) => {
+    setCompareRunIds((current) => {
+      if (current.includes(runId)) return current.filter((item) => item !== runId);
+      if (current.length < 2) return [...current, runId];
+      return [current[0], runId];
+    });
+  };
 
   const scrollTimeline = (direction: -1 | 1) => {
     const viewport = viewportRef.current;
@@ -206,6 +252,67 @@ export function HistoryPage({
         ) : null}
       </div>
 
+      {compareRunIds.length > 0 ? (
+        <section className="run-comparison" aria-label="run comparison">
+          <header className="run-comparison-header">
+            <div>
+              <span>Investigation</span>
+              <h3>Run Comparison</h3>
+            </div>
+            <div>
+              <button
+                aria-label="Swap baseline and candidate"
+                disabled={!candidateRunId}
+                onClick={() => setCompareRunIds((current) => current.length === 2 ? [current[1], current[0]] : current)}
+                title="Swap runs"
+                type="button"
+              >
+                <ArrowLeftRight size={14} />
+              </button>
+              <button aria-label="Clear run comparison" onClick={() => setCompareRunIds([])} title="Clear comparison" type="button">
+                <RotateCcw size={14} />
+              </button>
+            </div>
+          </header>
+          <div className="comparison-run-pair">
+            <div><span>Baseline</span><strong>{baselineRunId}</strong></div>
+            <ArrowLeftRight size={15} aria-hidden="true" />
+            <div><span>Candidate</span><strong>{candidateRunId ?? "—"}</strong></div>
+          </div>
+          {comparisonLoading ? <p className="comparison-state">Aligning recorded evidence…</p> : null}
+          {comparisonError ? <p className="comparison-state warning">{comparisonError}</p> : null}
+          {comparison?.first_observed_divergence ? (
+            <div className="comparison-divergence">
+              <div>
+                <span>First observed divergence</span>
+                <strong>{comparison.first_observed_divergence.signal}</strong>
+              </div>
+              <div><span>step</span><strong>{comparison.first_observed_divergence.step}</strong></div>
+              <div><span>baseline</span><strong>{compactValue(comparison.first_observed_divergence.baseline)}</strong></div>
+              <div><span>candidate</span><strong>{compactValue(comparison.first_observed_divergence.candidate)}</strong></div>
+              <em>{comparison.first_observed_divergence.category}</em>
+            </div>
+          ) : null}
+          {comparison ? (
+            <details className="comparison-contract">
+              <summary>
+                <span>{comparison.contract_differences.length} contract changes</span>
+                <ChevronDown size={14} />
+              </summary>
+              <div>
+                {comparison.contract_differences.map((difference) => (
+                  <article key={difference.path}>
+                    <strong>{difference.path}</strong>
+                    <span>{compactValue(difference.baseline)}</span>
+                    <span>{compactValue(difference.candidate)}</span>
+                  </article>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </section>
+      ) : null}
+
       {orderedRuns.length === 0 ? (
         <div className="history-empty">
           <p>No runs match this library view.</p>
@@ -242,13 +349,17 @@ export function HistoryPage({
                   <div className="library-run-row">
                     {groupRuns.map((run) => (
                       <article
-                        className={`run-card ${watchedRunId === run.run_id ? "watching" : ""}`}
+                        className={`run-card ${watchedRunId === run.run_id ? "watching" : ""} ${compareRunIds[0] === run.run_id ? "compare-baseline" : ""} ${compareRunIds[1] === run.run_id ? "compare-candidate" : ""}`}
                         key={run.run_id}
                         onMouseEnter={(event) => handleCardEnter(run, event)}
                       >
                         <header>
                           <strong>{run.run_id}</strong>
-                          {watchedRunId === run.run_id && <Radio size={14} className="history-watching" />}
+                          <span className="run-card-state">
+                            {compareRunIds[0] === run.run_id ? <em>B</em> : null}
+                            {compareRunIds[1] === run.run_id ? <em>C</em> : null}
+                            {watchedRunId === run.run_id && <Radio size={14} className="history-watching" />}
+                          </span>
                         </header>
                         <span className="run-date">{formatTime(run.created_at)}</span>
                         <div className="run-card-meta">
@@ -276,6 +387,15 @@ export function HistoryPage({
                             type="button"
                           >
                             <FileText size={14} /> Detail
+                          </button>
+                          <button
+                            aria-label={`Compare ${run.run_id}`}
+                            className={`secondary compare-action ${compareRunIds.includes(run.run_id) ? "selected" : ""}`}
+                            onClick={() => toggleComparisonRun(run.run_id)}
+                            title="Add to comparison"
+                            type="button"
+                          >
+                            <GitCompareArrows size={14} />
                           </button>
                           <button className="secondary" onClick={() => onDeleteRun(run.run_id)} type="button" aria-label={`Delete ${run.run_id}`}>
                             <Trash2 size={14} />

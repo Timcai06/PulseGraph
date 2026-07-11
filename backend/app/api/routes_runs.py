@@ -4,7 +4,8 @@ from fastapi import APIRouter, HTTPException
 
 from app.events.run_registry import RunRegistry
 from app.events.run_store import RunStore
-from app.schemas import RunSummary
+from app.reports.comparison import compare_runs
+from app.schemas import RunComparison, RunSummary
 
 
 def create_runs_router(run_registry: RunRegistry, run_store: RunStore) -> APIRouter:
@@ -13,6 +14,13 @@ def create_runs_router(run_registry: RunRegistry, run_store: RunStore) -> APIRou
     @router.get("")
     def list_runs() -> list[RunSummary]:
         return run_registry.list_runs()
+
+    @router.get("/compare")
+    def compare_recorded_runs(baseline_run_id: str, candidate_run_id: str) -> RunComparison:
+        comparison = compare_runs(run_store, baseline_run_id, candidate_run_id)
+        if comparison is None:
+            raise HTTPException(status_code=404, detail="Both recorded runs are required for comparison.")
+        return comparison
 
     @router.delete("/{run_id}")
     def delete_run(run_id: str):

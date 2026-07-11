@@ -27,6 +27,7 @@ import panelStylesSource from "./styles/modules/panels.css?raw";
 import apiTypesSource from "./api/types.ts?raw";
 import diagnosticsTraySource from "./components/DiagnosticsTray.tsx?raw";
 import telemetryPanelSource from "./components/TelemetryPanel.tsx?raw";
+import evaluationEvidenceSource from "./components/EvaluationEvidencePanel.tsx?raw";
 
 describe("App workspace layout", () => {
   it("keeps layer details out of the control rail", () => {
@@ -247,6 +248,17 @@ describe("App workspace layout", () => {
     expect(historyPageSource).toContain('event.key === "Home"');
     expect(historyPageSource).toContain('event.key === "End"');
     expect(historyPageSource).not.toContain("Draggable.create");
+  });
+
+  it("connects recorded CV evidence to run comparison and evaluation", () => {
+    expect(historyPageSource).toContain("compareRuns");
+    expect(historyPageSource).toContain("First observed divergence");
+    expect(historyPageSource).toContain("contract_differences");
+    expect(apiHttpSource).toContain("/api/runs/compare");
+    expect(appSource).toContain("EvaluationEvidencePanel");
+    expect(evaluationEvidenceSource).toContain('item.kind === "evaluation_failures"');
+    expect(evaluationEvidenceSource).toContain("probe_index");
+    expect(evaluationEvidenceSource).toContain("onInspectSample");
   });
 
   it("adds report navigation and confusion drilldown", () => {

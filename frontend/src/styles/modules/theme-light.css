@@ -82,6 +82,15 @@
   background: var(--chip-bg);
 }
 
+[data-theme="light"] .run-comparison,
+[data-theme="light"] .comparison-run-pair > div {
+  background: rgba(255, 255, 255, 0.64);
+}
+
+[data-theme="light"] .evaluation-evidence-panel {
+  background: rgba(248, 250, 252, 0.72);
+}
+
 [data-theme="light"] .stage-stats .stat-value {
   text-shadow: 0 0 30px rgba(2, 132, 199, 0.25);
 }

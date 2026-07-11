@@ -152,6 +152,11 @@ def build_run_detail(store: RunStore, run_id: str) -> RunDetail | None:
         for event in events
         if event.type == "metric"
     ]
+    evidence = [
+        {"step": event.step, "epoch": event.epoch, **event.payload}
+        for event in events
+        if event.type == "evidence"
+    ]
     graph_dict = store.load_graph(run_id)
     graph = None
     if graph_dict:
@@ -176,6 +181,7 @@ def build_run_detail(store: RunStore, run_id: str) -> RunDetail | None:
         graph=graph,
         has_samples=store.samples_path(run_id) is not None,
         metrics=metrics,
+        evidence=evidence,
         checkpoints=store.list_checkpoints(run_id),
         event_count=len(events) if events else (live.event_count if live else 0),
     )

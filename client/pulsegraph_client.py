@@ -96,11 +96,33 @@ class PulseGraphRun:
     def infra(self, step: int, epoch: int | None = None, **payload: Any) -> None:
         self._emit("infra", "infra", step, epoch, payload=payload)
 
+    def evidence(self, step: int, kind: str, epoch: int | None = None, **payload: Any) -> None:
+        """Record structured investigation evidence without promoting it to a chart metric."""
+        self._emit("training", "evidence", step, epoch, payload={"kind": kind, **payload})
+
+    def training_stage(
+        self,
+        step: int,
+        scope: str,
+        stage: str,
+        state: str,
+        message: str,
+        epoch: int | None = None,
+        **payload: Any,
+    ) -> None:
+        self._emit(
+            "training",
+            "training_stage",
+            step,
+            epoch,
+            payload={"scope": scope, "stage": stage, "state": state, "message": message, **payload},
+        )
+
     def checkpoint(self, step: int, epoch: int | None = None, **payload: Any) -> None:
         self._emit("checkpoint", "checkpoint", step, epoch, payload=payload)
 
-    def complete(self, step: int, epoch: int | None = None) -> None:
-        self._emit("training", "run_complete", step, epoch)
+    def complete(self, step: int, epoch: int | None = None, status: str = "completed", **payload: Any) -> None:
+        self._emit("training", "run_complete", step, epoch, payload={"status": status, **payload})
 
     def graph(self, tensors: list[dict[str, Any]], step: int = 0, epoch: int | None = None) -> None:
         """Describe the model as {name, shape} tensor specs; the backend infers the graph."""
