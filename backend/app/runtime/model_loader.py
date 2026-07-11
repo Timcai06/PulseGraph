@@ -117,7 +117,7 @@ def forward_with_layer_capture(model: nn.Module, *args: Any, **kwargs: Any) -> t
     handles = []
 
     def make_hook(layer_name: str):
-        def hook(_module: nn.Module, inputs: tuple, output: Any) -> None:
+        def hook(module: nn.Module, inputs: tuple, output: Any) -> None:
             detached = _first_tensor(output)
             if detached is None:
                 return
@@ -126,6 +126,19 @@ def forward_with_layer_capture(model: nn.Module, *args: Any, **kwargs: Any) -> t
             input_shape = None
             if input_tensor is not None:
                 input_shape = list(input_tensor.shape[1:]) if input_tensor.dim() >= 4 else list(input_tensor.shape)
+            # 参数侧统计：weight_std 直接读权重；gradient_norm 读 param.grad ——
+            # 训练循环在 optimizer.step() 之后、下一轮 zero_grad 之前采样，
+            # 此时梯度仍是本步的值。纯推理路径没有梯度，该项保持 None。
+            weight = getattr(module, "weight", None)
+            weight_std = None
+            if isinstance(weight, torch.Tensor) and weight.numel() > 1:
+                weight_std = round(float(weight.detach().float().std()), 6)
+            grad_sq = 0.0
+            has_grad = False
+            for param in module.parameters(recurse=False):
+                if param.grad is not None:
+                    grad_sq += float(param.grad.detach().float().pow(2).sum())
+                    has_grad = True
             layers.append(
                 {
                     "layer_id": layer_name,
@@ -133,6 +146,8 @@ def forward_with_layer_capture(model: nn.Module, *args: Any, **kwargs: Any) -> t
                     "output_shape": list(detached.shape[1:]) if detached.dim() > 1 else list(detached.shape),
                     "activation_mean": round(float(detached.float().mean()), 4),
                     "activation_sparsity": round(float((detached == 0).float().mean()), 4),
+                    "weight_std": weight_std,
+                    "gradient_norm": round(grad_sq**0.5, 6) if has_grad else None,
                 }
             )
 
