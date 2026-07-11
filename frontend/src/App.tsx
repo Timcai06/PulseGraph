@@ -731,41 +731,43 @@ export default function App() {
           ) : null}
         </div>
       ) : workspace === "evaluate" ? (
-        <section className="evaluate-workspace">
-          <header className="evaluate-workspace-header">
-            <div>
-              <span>Evaluate</span>
-              <h2>{sourceRecipe?.summary?.name ?? activeRunContract?.task ?? "Active run"}</h2>
-            </div>
-            <div className="evaluate-header-actions">
-              <div className="evaluate-run-context">
-                <span>{stream.runId ?? "No run selected"}</span>
-                <em>{predictionSummary || "No inference result"}</em>
+        <>
+          <section className="evaluate-workspace">
+            <header className="evaluate-workspace-header">
+              <div>
+                <span>Evaluate</span>
+                <h2>{sourceRecipe?.summary?.name ?? activeRunContract?.task ?? "Active run"}</h2>
               </div>
-              <button disabled={!forwardTarget || busy === "forward"} onClick={handleRunForward} type="button">
-                <Zap size={14} /> Run Inference
-              </button>
-            </div>
-          </header>
-          <div className="evaluate-workspace-body">
-            <section className="evaluate-output-surface">
-              <div className="panel-heading">
-                <h2>Inference Output</h2>
-                <span>{predictionSummary}</span>
-              </div>
-              {prediction ? (
-                <InferenceProbe prediction={prediction} theme={theme} />
-              ) : (
-                <div className="evaluate-empty-state">
-                  <span>No inference result</span>
-                  <em>{stream.runId ?? "No active run"}</em>
+              <div className="evaluate-header-actions">
+                <div className="evaluate-run-context">
+                  <span>{stream.runId ?? "No run selected"}</span>
+                  <em>{predictionSummary || "No inference result"}</em>
                 </div>
-              )}
-            </section>
-            <DiagnosticsTray error={errorMessage} events={timelineLive ? stream.events : replayEvents} />
-          </div>
+                <button disabled={!forwardTarget || busy === "forward"} onClick={handleRunForward} type="button">
+                  <Zap size={14} /> Run Inference
+                </button>
+              </div>
+            </header>
+            <div className="evaluate-workspace-body">
+              <section className="evaluate-output-surface">
+                <div className="panel-heading">
+                  <h2>Inference Output</h2>
+                  <span>{predictionSummary}</span>
+                </div>
+                {prediction ? (
+                  <InferenceProbe prediction={prediction} theme={theme} />
+                ) : (
+                  <div className="evaluate-empty-state">
+                    <span>No inference result</span>
+                    <em>{stream.runId ?? "No active run"}</em>
+                  </div>
+                )}
+              </section>
+              <DiagnosticsTray error={errorMessage} events={timelineLive ? stream.events : replayEvents} />
+            </div>
+          </section>
           {renderControlRail("run")}
-        </section>
+        </>
       ) : (
         <HistoryPage
           key={historyMode}

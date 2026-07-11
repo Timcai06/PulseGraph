@@ -240,6 +240,13 @@ describe("App workspace layout", () => {
     expect(historyPageSource).toContain("statusFilter");
     expect(historyPageSource).toContain("groupedRuns");
     expect(historyPageSource).toContain("library-section");
+    expect(historyPageSource).toContain("timeline-viewport");
+    expect(historyPageSource).toContain("Scrollable run timeline");
+    expect(historyPageSource).toContain("scrollTimeline");
+    expect(historyPageSource).toContain("handleTimelineKeyDown");
+    expect(historyPageSource).toContain('event.key === "Home"');
+    expect(historyPageSource).toContain('event.key === "End"');
+    expect(historyPageSource).not.toContain("Draggable.create");
   });
 
   it("adds report navigation and confusion drilldown", () => {
@@ -392,6 +399,7 @@ describe("App workspace layout", () => {
     expect(appSource).toContain('window.history.replaceState(null, "", nextHash)');
     expect(appSource).toContain('contextView={contextView}');
     expect(appSource).toContain("evaluate-workspace");
+    expect(appSource).toContain('</section>\n          {renderControlRail("run")}');
   });
 
   it("turns exposed node handles into intentional Composer ports", () => {

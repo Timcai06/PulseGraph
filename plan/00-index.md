@@ -1,31 +1,28 @@
 # PulseGraph Plan Index
 
-This directory is the working plan surface for PulseGraph product and implementation decisions.
+This directory contains only the active product and implementation stage. Completed stage plans are removed rather than archived here.
 
-## Current Focus
+## Product Boundary
 
-PulseGraph is restructuring its observability cockpit around task workspaces and a truthful, event-driven Training Loop.
+PulseGraph is a local-first PyTorch training investigation workbench: a training glass box and, eventually, a training APM.
 
-The product direction is:
+It should answer:
 
-- keep Ops, telemetry, graph replay, inference output, and reports as the core differentiation;
-- separate Prepare, Train, Evaluate, and Runs without losing the active resource or run;
-- represent lifecycle, repeated train steps, and checkpoint/evaluation milestones at distinct levels;
-- drive the Training Loop from execution events instead of UI inference;
-- keep Ops, telemetry, replay, inference, and reports as coordinated evidence surfaces;
-- stay local and trusted for now, without cloud sandbox complexity;
-- add real datasets only when a specific model/task needs them.
+- where a run first changed or failed;
+- which phase, step, operation, layer, sample, or system event was involved;
+- which code, configuration, data, environment, and checkpoint produced the observed weights;
+- what evidence supports a diagnosis and what experiment should verify it.
 
-## Documents
+PulseGraph is not becoming a generic cloud trainer, cluster orchestrator, dataset platform, or drag-and-drop model builder.
 
-- [08-workspace-training-loop-ux.md](08-workspace-training-loop-ux.md): current-stage plan for task workspaces and event-driven training navigation.
+## Current Stage
 
-## Working Rule
+- [09-attach-first-training-investigation.md](09-attach-first-training-investigation.md): attach PulseGraph to the existing MiniGPT training loop and capture AMP and `torch.compile` evidence without taking ownership of training.
 
-Every platform change should preserve this hierarchy:
+## Working Rules
 
-1. Observe: show current run health without asking the user to dig.
-2. Diagnose: let the user expand a stage, click a node, or choose a step to inspect evidence.
-3. Act: expose replay, report, export, and next-run actions only when they are relevant.
-
-Task support is not complete until it works across resource loading, training, replay, inference rendering, telemetry, and report surfaces.
+1. Preserve the user's real training script and add low-friction instrumentation around it.
+2. Separate lightweight continuous telemetry from opt-in deep capture.
+3. Every diagnosis must link to recorded evidence; UI inference is never runtime truth.
+4. Add a new task renderer or panel only when a real model forces the requirement.
+5. Keep the current Resource workflow as Managed Lab while Attach & Observe becomes the long-term integration path.

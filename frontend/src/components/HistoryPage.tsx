@@ -1,16 +1,14 @@
-import { useRef, useState } from "react";
-import { FileText, Play, Radio, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, FileText, Play, Radio, Trash2 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Draggable } from "gsap/Draggable";
-import { InertiaPlugin } from "gsap/InertiaPlugin";
 import type { RunSummary } from "../api/client";
 import { getRunDetail } from "../api/client";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { motionDuration, motionEase, motionStagger } from "../lib/motion";
 import { Sparkline } from "./Sparkline";
 
-gsap.registerPlugin(useGSAP, Draggable, InertiaPlugin);
+gsap.registerPlugin(useGSAP);
 
 type Props = {
   runs: RunSummary[];
@@ -54,6 +52,7 @@ export function HistoryPage({
   onDeleteRun
 }: Props) {
   const stripRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const quickMove = useRef<{ x: (value: number) => void; y: (value: number) => void } | null>(null);
@@ -61,6 +60,8 @@ export function HistoryPage({
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatusFilter);
+  const [canScrollBack, setCanScrollBack] = useState(false);
+  const [canScrollForward, setCanScrollForward] = useState(false);
   const reducedMotion = useReducedMotion();
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -83,25 +84,8 @@ export function HistoryPage({
     return groups;
   }, {});
 
-  // draggable filmstrip with inertia; bounds follow content and window size
   useGSAP(() => {
-    const strip = stripRef.current;
-    const track = trackRef.current;
-    if (!strip || !track || !runs.length) return;
-    const [drag] = Draggable.create(track, {
-      type: "x",
-      inertia: !reducedMotion,
-      edgeResistance: 0.85,
-      cursor: "grab",
-      activeCursor: "grabbing"
-    });
-    const applyBounds = () => {
-      // offsetWidth, not scrollWidth: the rail pseudo-element extends far past
-      // the cards and would inflate scrollWidth
-      drag.applyBounds({ minX: Math.min(0, strip.clientWidth - track.offsetWidth - 24), maxX: 0 });
-    };
-    applyBounds();
-    window.addEventListener("resize", applyBounds);
+    if (!stripRef.current || !orderedRuns.length) return;
     if (!reducedMotion) {
       gsap.from(".run-card", {
         opacity: 0,
@@ -112,8 +96,52 @@ export function HistoryPage({
         clearProps: "all"
       });
     }
-    return () => window.removeEventListener("resize", applyBounds);
-  }, { dependencies: [runs.length, reducedMotion], scope: stripRef });
+  }, { dependencies: [orderedRuns.length, reducedMotion], scope: stripRef });
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const track = trackRef.current;
+    if (!viewport || !track) return;
+    const update = () => {
+      setCanScrollBack(viewport.scrollLeft > 1);
+      setCanScrollForward(viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 1);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(viewport);
+    observer.observe(track);
+    viewport.addEventListener("scroll", update, { passive: true });
+    update();
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener("scroll", update);
+    };
+  }, [normalizedQuery, orderedRuns.length, statusFilter]);
+
+  const scrollTimeline = (direction: -1 | 1) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: direction * Math.max(280, viewport.clientWidth * 0.72),
+      behavior: reducedMotion ? "auto" : "smooth"
+    });
+  };
+
+  const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      scrollTimeline(event.key === "ArrowLeft" ? -1 : 1);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      viewport.scrollTo({
+        left: event.key === "Home" ? 0 : viewport.scrollWidth,
+        behavior: reducedMotion ? "auto" : "smooth"
+      });
+    }
+  };
 
   useGSAP(() => {
     const el = previewRef.current;
@@ -189,57 +217,76 @@ export function HistoryPage({
           onMouseMove={handleStripMove}
           onMouseLeave={() => setPreview(null)}
         >
-          <div className="timeline-track" ref={trackRef}>
-            {Object.entries(groupedRuns).map(([group, groupRuns]) => (
-              <section className="library-section" key={group}>
-                <h3>{group}</h3>
-                <div className="library-run-row">
-                  {groupRuns.map((run) => (
-                    <article
-                      className={`run-card ${watchedRunId === run.run_id ? "watching" : ""}`}
-                      key={run.run_id}
-                      onMouseEnter={(event) => handleCardEnter(run, event)}
-                    >
-                      <header>
-                        <strong>{run.run_id}</strong>
-                        {watchedRunId === run.run_id && <Radio size={14} className="history-watching" />}
-                      </header>
-                      <span className="run-date">{formatTime(run.created_at)}</span>
-                      <div className="run-card-meta">
-                        <span>
-                          steps <b>{run.last_step}</b>
-                        </span>
-                        <span>
-                          events <b>{run.event_count}</b>
-                        </span>
-                      </div>
-                      <div className="run-card-actions">
-                        <button
-                          className={watchedRunId === run.run_id ? "watching" : ""}
-                          onClick={() => onWatchRun(run.run_id)}
-                          type="button"
-                        >
-                          <Play size={14} /> Replay
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={(event) => {
-                            const card = (event.currentTarget as HTMLElement).closest(".run-card");
-                            onOpenDetail(run.run_id, card?.getBoundingClientRect());
-                          }}
-                          type="button"
-                        >
-                          <FileText size={14} /> Detail
-                        </button>
-                        <button className="secondary" onClick={() => onDeleteRun(run.run_id)} type="button" aria-label={`Delete ${run.run_id}`}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ))}
+          <header className="timeline-navigation">
+            <span>Run timeline</span>
+            <div>
+              <button aria-label="Scroll to earlier runs" disabled={!canScrollBack} onClick={() => scrollTimeline(-1)} type="button">
+                <ChevronLeft size={15} />
+              </button>
+              <button aria-label="Scroll to later runs" disabled={!canScrollForward} onClick={() => scrollTimeline(1)} type="button">
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </header>
+          <div
+            className="timeline-viewport"
+            ref={viewportRef}
+            tabIndex={0}
+            aria-label="Scrollable run timeline"
+            onKeyDown={handleTimelineKeyDown}
+          >
+            <div className="timeline-track" ref={trackRef}>
+              {Object.entries(groupedRuns).map(([group, groupRuns]) => (
+                <section className="library-section" key={group}>
+                  <h3>{group}</h3>
+                  <div className="library-run-row">
+                    {groupRuns.map((run) => (
+                      <article
+                        className={`run-card ${watchedRunId === run.run_id ? "watching" : ""}`}
+                        key={run.run_id}
+                        onMouseEnter={(event) => handleCardEnter(run, event)}
+                      >
+                        <header>
+                          <strong>{run.run_id}</strong>
+                          {watchedRunId === run.run_id && <Radio size={14} className="history-watching" />}
+                        </header>
+                        <span className="run-date">{formatTime(run.created_at)}</span>
+                        <div className="run-card-meta">
+                          <span>
+                            steps <b>{run.last_step}</b>
+                          </span>
+                          <span>
+                            events <b>{run.event_count}</b>
+                          </span>
+                        </div>
+                        <div className="run-card-actions">
+                          <button
+                            className={watchedRunId === run.run_id ? "watching" : ""}
+                            onClick={() => onWatchRun(run.run_id)}
+                            type="button"
+                          >
+                            <Play size={14} /> Replay
+                          </button>
+                          <button
+                            className="secondary"
+                            onClick={(event) => {
+                              const card = (event.currentTarget as HTMLElement).closest(".run-card");
+                              onOpenDetail(run.run_id, card?.getBoundingClientRect());
+                            }}
+                            type="button"
+                          >
+                            <FileText size={14} /> Detail
+                          </button>
+                          <button className="secondary" onClick={() => onDeleteRun(run.run_id)} type="button" aria-label={`Delete ${run.run_id}`}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
           </div>
 
           <div className={`run-preview ${preview ? "visible" : ""}`} ref={previewRef} aria-hidden="true">

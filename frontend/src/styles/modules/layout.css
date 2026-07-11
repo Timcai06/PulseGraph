@@ -506,7 +506,65 @@ h1, h2, h3, p {
   position: relative;
   overflow: hidden;
   min-height: 300px;
-  padding: 18px 0 8px;
+  padding: 10px 0 0;
+}
+
+.timeline-navigation {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.timeline-navigation > div {
+  display: flex;
+  gap: 6px;
+}
+
+.timeline-navigation button {
+  width: 30px;
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.timeline-viewport {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 0 8px;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: rgba(56, 189, 248, 0.5) rgba(148, 163, 184, 0.08);
+  scrollbar-width: thin;
+}
+
+.timeline-viewport:focus-visible {
+  outline: 1px solid var(--cyan-strong);
+  outline-offset: 2px;
+}
+
+.timeline-viewport::-webkit-scrollbar {
+  height: 8px;
+}
+
+.timeline-viewport::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.timeline-viewport::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.5);
 }
 
 .timeline-track {
@@ -516,7 +574,6 @@ h1, h2, h3, p {
   width: max-content;
   padding: 0 6px 46px;
   position: relative;
-  cursor: grab;
 }
 
 .library-section {
