@@ -376,7 +376,7 @@ export function HistoryPage({
                             onClick={() => onWatchRun(run.run_id)}
                             type="button"
                           >
-                            <Play size={14} /> Replay
+                            <Play size={14} /> <span>Replay</span>
                           </button>
                           <button
                             className="secondary"
@@ -386,7 +386,7 @@ export function HistoryPage({
                             }}
                             type="button"
                           >
-                            <FileText size={14} /> Detail
+                            <FileText size={14} /> <span>Detail</span>
                           </button>
                           <button
                             aria-label={`Compare ${run.run_id}`}

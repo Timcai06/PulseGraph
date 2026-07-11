@@ -91,6 +91,10 @@
   background: rgba(248, 250, 252, 0.72);
 }
 
+[data-theme="light"] .layer-hierarchy details {
+  background: rgba(248, 250, 252, 0.82);
+}
+
 [data-theme="light"] .stage-stats .stat-value {
   text-shadow: 0 0 30px rgba(2, 132, 199, 0.25);
 }

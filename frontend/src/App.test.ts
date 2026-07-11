@@ -290,6 +290,9 @@ describe("App workspace layout", () => {
 
   it("shows richer Ops node health metadata", () => {
     expect(modelGraphSource).toContain("layerSnapshots");
+    expect(layerInspectorSource).toContain("Stage Structure");
+    expect(layerInspectorSource).toContain("hierarchyBlocks");
+    expect(layerInspectorSource).toContain("block.operators");
     expect(modelGraphSource).toContain("deriveLayerHealth");
     expect(modelGraphSource).toContain("formatNodeShape");
     expect(modelGraphSource).toContain("node-health");

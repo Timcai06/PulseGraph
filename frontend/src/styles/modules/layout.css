@@ -899,6 +899,7 @@ h1, h2, h3, p {
 .run-card {
   position: relative;
   width: 246px;
+  box-sizing: border-box;
   flex: none;
   display: grid;
   gap: 8px;
@@ -908,6 +909,11 @@ h1, h2, h3, p {
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.5);
   transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.run-card > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .run-card:hover {
@@ -943,13 +949,20 @@ h1, h2, h3, p {
 }
 
 .run-card header {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
+.run-card header > strong {
+  min-width: 0;
+  flex: 1;
+}
+
 .run-card-state {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -982,18 +995,30 @@ h1, h2, h3, p {
 }
 
 .run-date {
+  display: block;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-card-meta {
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   color: var(--text-muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.run-card-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-card-meta b {
@@ -1003,16 +1028,35 @@ h1, h2, h3, p {
 }
 
 .run-card-actions {
+  width: 100%;
+  min-width: 0;
   display: flex;
   gap: 6px;
   margin-top: 4px;
 }
 
 .run-card-actions button {
+  min-width: 0;
   width: auto;
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
   padding: 7px 8px;
   font-size: 11.5px;
+}
+
+.run-card-actions button svg {
+  flex: none;
+}
+
+.run-card-actions button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-card-actions button:last-child {
