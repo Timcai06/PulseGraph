@@ -6,10 +6,12 @@ import "@fontsource/jetbrains-mono/700.css";
 import "@xyflow/react/dist/style.css";
 import "./styles/app.css";
 import App from "./App";
+import Loader from "./animation/Loader";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <App />
+    <Loader />
   </React.StrictMode>
 );
 

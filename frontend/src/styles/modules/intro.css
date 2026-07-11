@@ -1,0 +1,268 @@
+/* ── Intro loader · single-panel wipe（层次：dither canvas z0 → grain/vignette z1 → 内容 z2）── */
+
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  /* 静态渐变是 WebGL 不可用 / 降动时的兜底 */
+  background:
+    radial-gradient(circle at 72% 36%, rgba(37, 99, 235, 0.24), transparent 34%),
+    radial-gradient(circle at 30% 58%, rgba(45, 212, 191, 0.08), transparent 32%),
+    linear-gradient(158deg, #05070c 0%, #081020 48%, #0b1528 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+  will-change: transform;
+}
+
+.intro::before,
+.intro::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Grain + vignette 压在 Dither canvas (z0) 之上、内容 (z2) 之下 */
+  z-index: 1;
+}
+
+.intro::before {
+  background:
+    linear-gradient(115deg, transparent 0%, rgba(56, 189, 248, 0.05) 38%, transparent 64%),
+    radial-gradient(ellipse at 50% 50%, transparent 28%, rgba(0, 0, 0, 0.56) 100%),
+    url("/noise/grain-128.png");
+  background-size: auto, auto, 128px 128px;
+  mix-blend-mode: screen;
+  opacity: 0.66;
+}
+
+.intro::after {
+  /* 上下压黑带（角落仪表文字的底）+ 中心暗斑（标题的底）——
+     dither 亮带扫过时文字对比度不掉档 */
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.52), transparent 20%, transparent 72%, rgba(0, 0, 0, 0.68)),
+    radial-gradient(ellipse 64% 42% at 50% 46%, rgba(2, 4, 10, 0.6), transparent 74%),
+    radial-gradient(circle at 58% 42%, rgba(190, 227, 255, 0.04), transparent 24%);
+  opacity: 1;
+}
+
+.intro > * {
+  position: relative;
+  z-index: 2;
+}
+
+.intro__dither {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── 角落 kicker ── */
+.intro__meta {
+  position: absolute;
+  top: clamp(20px, 4vw, 48px);
+  left: clamp(20px, 4vw, 56px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(229, 237, 247, 0.68);
+}
+
+/* ── 标题：clip 遮罩，字符从硬边缘升起 ── */
+.intro__text-wrap {
+  overflow: hidden;
+  padding: 0.16em 0.08em;
+  contain: layout paint;
+}
+
+.intro__text {
+  position: relative;
+  /* 与驾驶舱品牌字一致（顶栏 PulseGraph 标题同为 Inter 重字重） */
+  font-family: var(--font-sans);
+  font-size: clamp(48px, min(11vw, 17vh), 158px);
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-shadow: 0 2px 28px rgba(2, 6, 16, 0.65);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  will-change: transform, opacity;
+}
+
+.intro__text::after {
+  content: "TRAINING · PROVENANCE · TELEMETRY";
+  position: absolute;
+  left: 50%;
+  top: calc(100% + clamp(18px, 2.6vw, 32px));
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: clamp(8px, 0.75vw, 11px);
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(229, 237, 247, 0.55);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 每字符固定宽度槽位（按 Inter 字形分档）→ 乱码换字整行零抖动 */
+.intro__char {
+  display: inline-block;
+  flex: 0 0 var(--intro-char-width, 0.58em);
+  inline-size: var(--intro-char-width, 0.58em);
+  text-align: center;
+  will-change: transform, opacity;
+}
+
+.intro__char--narrow {
+  --intro-char-width: 0.28em;
+}
+
+.intro__char--wide {
+  --intro-char-width: 0.72em;
+}
+
+.intro__char-glyph {
+  display: inline-block;
+  min-inline-size: 100%;
+  text-align: center;
+  will-change: transform, opacity;
+}
+
+.intro__dot {
+  --intro-char-width: 0.34em;
+  color: var(--cyan);
+}
+
+.intro__scan-line {
+  position: absolute;
+  left: clamp(20px, 18vw, 260px);
+  right: clamp(20px, 18vw, 260px);
+  top: 50%;
+  height: 1px;
+  transform-origin: left center;
+  background:
+    linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.84), rgba(229, 237, 247, 0.48), transparent);
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.18);
+  opacity: 0;
+  z-index: 2;
+  will-change: transform, opacity;
+}
+
+.intro__status {
+  position: absolute;
+  right: clamp(20px, 4vw, 56px);
+  bottom: clamp(24px, 4vw, 52px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(229, 237, 247, 0.55);
+  will-change: opacity;
+}
+
+.intro__status span:first-child {
+  color: rgba(229, 237, 247, 0.82);
+}
+
+/* ── 左下角计数器 ── */
+.intro__counter {
+  position: absolute;
+  left: clamp(20px, 4vw, 56px);
+  bottom: clamp(24px, 4vw, 52px);
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: end;
+  column-gap: 10px;
+  width: min(560px, calc(100vw - clamp(40px, 8vw, 112px)));
+  font-family: var(--font-mono);
+  font-size: clamp(22px, 2.8vw, 38px);
+  font-weight: 300;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  will-change: opacity;
+}
+
+.intro__counter::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -14px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(229, 237, 247, 0.34), rgba(229, 237, 247, 0.04));
+}
+
+.intro__counter-sep {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(229, 237, 247, 0.62);
+}
+
+.intro__stage {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(229, 237, 247, 0.58);
+}
+
+/* ── 底部发丝进度条 ── */
+.intro__bar-track {
+  position: absolute;
+  left: clamp(20px, 4vw, 56px);
+  right: clamp(20px, 4vw, 56px);
+  bottom: clamp(14px, 2.2vw, 28px);
+  height: 2px;
+  background: rgba(229, 237, 247, 0.18);
+  border-radius: 999px;
+  overflow: hidden;
+  will-change: opacity;
+}
+
+.intro__bar-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(229, 237, 247, 0.26), transparent);
+  animation: intro-progress-scan 1.8s linear infinite;
+  opacity: 0.55;
+}
+
+.intro__bar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--accent), var(--cyan));
+  box-shadow: 0 0 18px rgba(37, 99, 235, 0.6);
+  will-change: transform;
+}
+
+@keyframes intro-progress-scan {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro__bar-track::after {
+    animation: none;
+  }
+}
