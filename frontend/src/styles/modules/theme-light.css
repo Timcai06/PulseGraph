@@ -91,6 +91,11 @@
   background: rgba(248, 250, 252, 0.72);
 }
 
+[data-theme="light"] .stage-stats,
+[data-theme="light"] .evaluation-overview {
+  background: rgba(255, 255, 255, 0.82);
+}
+
 [data-theme="light"] .layer-hierarchy details {
   background: rgba(248, 250, 252, 0.82);
 }

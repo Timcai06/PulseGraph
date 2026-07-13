@@ -50,7 +50,7 @@
   /* Stage geometry shared by layout.css and App.tsx (dock tween) */
   --topbar-h: 58px;
   --rail-w: 304px;
-  --dock-h: 380px;
+  --dock-h: clamp(400px, 58vh, 520px);
   --dock-handle-h: 42px;
 
   font-family: var(--font-sans);

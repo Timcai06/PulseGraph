@@ -28,6 +28,7 @@ import apiTypesSource from "./api/types.ts?raw";
 import diagnosticsTraySource from "./components/DiagnosticsTray.tsx?raw";
 import telemetryPanelSource from "./components/TelemetryPanel.tsx?raw";
 import evaluationEvidenceSource from "./components/EvaluationEvidencePanel.tsx?raw";
+import evaluationSummarySource from "./lib/evaluationSummary.ts?raw";
 
 describe("App workspace layout", () => {
   it("keeps layer details out of the control rail", () => {
@@ -134,7 +135,9 @@ describe("App workspace layout", () => {
     expect(appSource).toContain("runContractFromConfig(detail.config)");
     expect(appSource).toContain("const metricTask = activeRunContract?.task ?? prediction?.task ?? sourceRecipe?.summary?.task");
     expect(appSource).toContain("activeRunContract?.metricSchema ?? prediction?.metric_schema");
-    expect(appSource).toContain("<StageStats metrics={stream.metrics} task={metricTask} metricSchema={metricSchema} />");
+    expect(appSource).toContain("<StageStats");
+    expect(appSource).toContain("detail={activeRunDetail}");
+    expect(appSource).toContain("metrics={stream.metrics}");
     expect(appSource).toContain("task={metricTask}");
     expect(appSource).toContain("metricSchema={metricSchema}");
   });
@@ -256,8 +259,9 @@ describe("App workspace layout", () => {
     expect(historyPageSource).toContain("contract_differences");
     expect(apiHttpSource).toContain("/api/runs/compare");
     expect(appSource).toContain("EvaluationEvidencePanel");
-    expect(evaluationEvidenceSource).toContain('item.kind === "evaluation_failures"');
-    expect(evaluationEvidenceSource).toContain("probe_index");
+    expect(evaluationEvidenceSource).toContain("evaluationSnapshot(detail)");
+    expect(evaluationSummarySource).toContain('item.kind === "evaluation_failures"');
+    expect(evaluationSummarySource).toContain("probe_index");
     expect(evaluationEvidenceSource).toContain("onInspectSample");
   });
 

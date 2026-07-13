@@ -36,6 +36,7 @@ import { HistoryPage } from "./components/HistoryPage";
 import { StageStats } from "./components/StageStats";
 import { TrainingLoopStrip } from "./components/TrainingLoopStrip";
 import { EvaluationEvidencePanel } from "./components/EvaluationEvidencePanel";
+import { EvaluationOverview } from "./components/EvaluationOverview";
 import { LayerInspector } from "./components/LayerInspector";
 import { TimelineScrubber } from "./components/TimelineScrubber";
 import { useRunStream } from "./hooks/useRunStream";
@@ -625,7 +626,9 @@ export default function App() {
   const renderControlRail = (contextView: "resource" | "train" | "run") => (
     <ControlRail
       contextView={contextView}
-      initiallyOpen={contextView !== "run"}
+      initiallyOpen={contextView === "resource" || (contextView === "train" && !stream.runId)}
+      activeRunDetail={activeRunDetail}
+      activeRunId={stream.runId}
       onResourceUpload={handleResourceUpload}
       onRunTraining={handleRunTraining}
       onRunForward={handleRunForward}
@@ -716,7 +719,17 @@ export default function App() {
               />
             </div>
           )}
-          {workspace === "train" ? <StageStats metrics={stream.metrics} task={metricTask} metricSchema={metricSchema} /> : null}
+          {workspace === "train" ? (
+            <StageStats
+              detail={activeRunDetail}
+              device={stream.device}
+              metrics={stream.metrics}
+              metricSchema={metricSchema}
+              runId={stream.runId}
+              status={stream.status}
+              task={metricTask}
+            />
+          ) : null}
           {renderControlRail(workspace === "prepare" ? "resource" : "train")}
           {workspace === "train" ? (
           <section className={`bottom-dock train-bottom-dock ${dockOpen ? "open" : ""}`} ref={dockRef}>
@@ -803,11 +816,13 @@ export default function App() {
             <div className="evaluate-workspace-body">
               <section className="evaluate-output-surface">
                 <div className="panel-heading">
-                  <h2>Inference Output</h2>
+                  <h2>{prediction ? "Inference Output" : activeRunDetail ? "Evaluation Summary" : "Inference Output"}</h2>
                   <span>{predictionSummary}</span>
                 </div>
                 {prediction ? (
                   <InferenceProbe prediction={prediction} theme={theme} />
+                ) : activeRunDetail ? (
+                  <EvaluationOverview detail={activeRunDetail} />
                 ) : (
                   <div className="evaluate-empty-state">
                     <span>No inference result</span>

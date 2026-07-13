@@ -27,6 +27,24 @@
   .stage-stats .stat-value {
     font-size: 40px;
   }
+
+  .stage-stats {
+    left: calc(var(--rail-w) + 24px);
+    grid-template-columns: minmax(160px, 0.9fr) minmax(360px, 2fr);
+  }
+
+  .stage-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .stage-stat-grid > span:nth-child(4) {
+    border-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  .stage-stat-grid > span:nth-child(n + 5) {
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+  }
 }
 
 @media (max-height: 640px) and (min-width: 861px) {
@@ -124,6 +142,31 @@
 
   .evaluate-output-surface .inference-body {
     grid-template-columns: 1fr;
+  }
+
+  .evaluation-vitals,
+  .evaluation-metric-band > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .evaluation-vitals > span:nth-child(3) {
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+    border-left: 0;
+  }
+
+  .evaluation-vitals > span:nth-child(4) {
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  .evaluation-overview-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+
+  .evaluation-context-band {
+    grid-row: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   }
 
   .evaluate-output-surface .recognition-image {
@@ -349,9 +392,17 @@
 
   .stage-stats {
     position: static;
+    grid-template-columns: 1fr;
     justify-items: start;
     text-align: left;
-    padding: 0 12px;
+    width: 100%;
+    padding: 0;
+  }
+
+  .stage-run-identity {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   }
 
   .neural-layers {

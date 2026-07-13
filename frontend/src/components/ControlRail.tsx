@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import type { NamedSourceFile, RunSummary } from "../api/client";
+import type { NamedSourceFile, RunDetail, RunSummary } from "../api/client";
 import type { LoadedResourceSummary } from "../App";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { motionDuration, motionEase } from "../lib/motion";
@@ -29,6 +29,8 @@ type Props = {
   initiallyOpen?: boolean;
   onResourceUpload: (files: NamedSourceFile[]) => void;
   loadedResource?: LoadedResourceSummary;
+  activeRunDetail?: RunDetail;
+  activeRunId?: string;
   onRunTraining: () => void;
   onRunForward: () => void;
   onReset: () => void;
@@ -207,6 +209,8 @@ function ResourceView({
 }
 
 function TrainView({
+  activeRunDetail,
+  activeRunId,
   busy,
   errorMessage,
   loadedResource,
@@ -219,6 +223,8 @@ function TrainView({
 }: Pick<
   Props,
   | "busy"
+  | "activeRunDetail"
+  | "activeRunId"
   | "errorMessage"
   | "loadedResource"
   | "onRunTraining"
@@ -228,25 +234,41 @@ function TrainView({
   | "trainAvailable"
   | "trainingSteps"
 >) {
+  const recordedRun = !loadedResource && Boolean(activeRunId);
+  const task = typeof activeRunDetail?.config?.task === "string" ? activeRunDetail.config.task : "training";
+
   return (
     <div aria-labelledby="control-tab-train" className="control-panel" id="control-panel-train" role="tabpanel">
       <section className="control-card control-card--hero">
         <div className="control-card-heading">
           <div>
-            <span className="control-card-kicker">Train</span>
-            <h3>{loadedResource?.name ?? "No resource"}</h3>
+            <span className="control-card-kicker">{recordedRun ? "Recorded run" : "Train"}</span>
+            <h3 title={activeRunId}>{loadedResource?.name ?? activeRunId ?? "No resource"}</h3>
           </div>
-          <span className={`control-card-badge ${trainAvailable ? "ready" : "blocked"}`}>{trainAvailable ? "ready" : "blocked"}</span>
+          <span className={`control-card-badge ${trainAvailable || recordedRun ? "ready" : "blocked"}`}>
+            {recordedRun ? "replay" : trainAvailable ? "ready" : "blocked"}
+          </span>
         </div>
 
-        <div className="control-parameter-grid" aria-label="training parameters">
-          <NumericField label="Training Steps" onCommit={onTrainingStepsChange} range={{ min: 1, max: 500 }} value={trainingSteps} />
-          <NumericField label="Telemetry Stride" onCommit={onTelemetryStrideChange} range={{ min: 1, max: 500 }} value={telemetryStride} />
-        </div>
+        {recordedRun ? (
+          <dl className="control-run-facts">
+            <div><dt>Task</dt><dd>{task}</dd></div>
+            <div><dt>Metrics</dt><dd>{activeRunDetail?.metrics.length ?? 0}</dd></div>
+            <div><dt>Checkpoints</dt><dd>{activeRunDetail?.checkpoints.length ?? 0}</dd></div>
+            <div><dt>Events</dt><dd>{activeRunDetail?.event_count ?? 0}</dd></div>
+          </dl>
+        ) : (
+          <>
+            <div className="control-parameter-grid" aria-label="training parameters">
+              <NumericField label="Training Steps" onCommit={onTrainingStepsChange} range={{ min: 1, max: 500 }} value={trainingSteps} />
+              <NumericField label="Telemetry Stride" onCommit={onTelemetryStrideChange} range={{ min: 1, max: 500 }} value={telemetryStride} />
+            </div>
 
-        <button onClick={onRunTraining} disabled={!trainAvailable || busy === "train"} type="button">
-          {busy === "train" ? <Loader2 size={16} className="spin" /> : <Dumbbell size={16} />} Run Training
-        </button>
+            <button onClick={onRunTraining} disabled={!trainAvailable || busy === "train"} type="button">
+              {busy === "train" ? <Loader2 size={16} className="spin" /> : <Dumbbell size={16} />} Run Training
+            </button>
+          </>
+        )}
       </section>
 
       {errorMessage ? <p className="error-hint">{errorMessage}</p> : null}
@@ -357,6 +379,8 @@ function RunView({
 }
 
 export function ControlRail({
+  activeRunDetail,
+  activeRunId,
   contextView,
   initiallyOpen = true,
   onResourceUpload,
@@ -465,7 +489,7 @@ export function ControlRail({
 
   const tabCounts = {
     resource: loadedResource ? `${loadedResource.fileCount} files` : "empty",
-    train: `${trainingSteps} step${trainingSteps === 1 ? "" : "s"}`,
+    train: activeRunId && !loadedResource ? "replay" : `${trainingSteps} step${trainingSteps === 1 ? "" : "s"}`,
     run: `${liveRuns.length} live`
   } satisfies Record<ControlView, string>;
 
@@ -519,6 +543,8 @@ export function ControlRail({
             />
           ) : activeView === "train" ? (
             <TrainView
+              activeRunDetail={activeRunDetail}
+              activeRunId={activeRunId}
               busy={busy}
               errorMessage={errorMessage}
               loadedResource={loadedResource}

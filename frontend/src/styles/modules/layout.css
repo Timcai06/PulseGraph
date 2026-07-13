@@ -104,7 +104,7 @@
 .evaluate-workspace-body {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.36fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
@@ -155,6 +155,189 @@
 
 .evaluate-empty-state em {
   font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.evaluation-overview {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.evaluation-vitals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.evaluation-vitals > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 8px;
+  padding: 12px 14px;
+}
+
+.evaluation-vitals > span + span {
+  border-left: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.evaluation-vitals svg {
+  grid-row: 1 / span 2;
+  color: var(--cyan);
+}
+
+.evaluation-vitals b {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.evaluation-vitals small,
+.evaluation-overview-grid header span,
+.evaluation-context-band dt,
+.evaluation-metric-band small {
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.evaluation-overview-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr);
+  grid-template-rows: auto minmax(150px, 1fr);
+}
+
+.evaluation-overview-grid > section {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.evaluation-overview-grid > section > header {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.evaluation-overview-grid > section > header svg {
+  color: var(--text-muted);
+}
+
+.evaluation-context-band {
+  grid-row: 1 / span 2;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.evaluation-context-band dl {
+  display: grid;
+  align-content: start;
+  margin: 0;
+}
+
+.evaluation-context-band dl > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.07);
+}
+
+.evaluation-context-band dt,
+.evaluation-context-band dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.evaluation-context-band dd {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evaluation-metric-band {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.evaluation-metric-band > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.evaluation-metric-band article {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.evaluation-metric-band article:nth-child(even) {
+  border-left: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.evaluation-metric-band strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evaluation-route-band > div {
+  min-height: 0;
+  overflow: auto;
+}
+
+.evaluation-route-band article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.07);
+}
+
+.evaluation-route-band article span {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evaluation-route-band article svg,
+.evaluation-route-band article b {
+  color: var(--amber);
+}
+
+.evaluation-route-band article b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.evaluation-metric-band em,
+.evaluation-route-band em {
+  align-self: center;
+  justify-self: center;
+  color: var(--text-muted);
   font-size: 10px;
   font-style: normal;
 }
